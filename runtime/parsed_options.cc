@@ -63,12 +63,16 @@ using RuntimeParser = CmdlineParser<RuntimeArgumentMap, RuntimeArgumentMap::Key>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wframe-larger-than="
 
+//初始化参数解析器
 std::unique_ptr<RuntimeParser> ParsedOptions::MakeParser(bool ignore_unrecognized) {
+
+  //所有解析后的配置参数结果都存放在 RuntimeArgumentMap 里
   using M = RuntimeArgumentMap;
 
   std::unique_ptr<RuntimeParser::Builder> parser_builder =
       std::unique_ptr<RuntimeParser::Builder>(new RuntimeParser::Builder());
 
+  //一些可能的配置参数
   parser_builder->
        Define("-Xzygote")
           .IntoKey(M::Zygote)
@@ -466,6 +470,7 @@ static void MaybeOverrideVerbosity() {
   //  gLogVerbosity.verifier = true;  // TODO: don't check this in!
 }
 
+//解析参数
 bool ParsedOptions::DoParse(const RuntimeOptions& options,
                             bool ignore_unrecognized,
                             RuntimeArgumentMap* runtime_options) {
@@ -475,14 +480,17 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
     }
   }
 
+  //初始化解析器 *
   auto parser = MakeParser(ignore_unrecognized);
 
   // Convert to a simple string list (without the magic pointer options)
+  //转换成 Vector
   std::vector<std::string> argv_list;
   if (!ProcessSpecialOptions(options, nullptr, &argv_list)) {
     return false;
   }
-
+ 
+  //解析结果(是否成功)
   CmdlineResult parse_result = parser->Parse(argv_list);
 
   // Handle parse errors by displaying the usage and potentially exiting.
@@ -501,14 +509,18 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
     UNREACHABLE();
   }
 
+  //所有解析后的配置参数结果都存放在 RuntimeArgumentMap 里
   using M = RuntimeArgumentMap;
   RuntimeArgumentMap args = parser->ReleaseArgumentsMap();
 
   // -help, -showversion, etc.
+  //如果是显示 Help 则不需要下面的操作，直接返回 false 终止初始化虚拟机,打印 Help 即可
   if (args.Exists(M::Help)) {
     Usage(nullptr);
     return false;
-  } else if (args.Exists(M::ShowVersion)) {
+  }
+  //显示虚拟机版本，同上 
+  else if (args.Exists(M::ShowVersion)) {
     UsageMessage(stdout,
                  "ART version %s %s\n",
                  Runtime::GetVersion(),
@@ -524,6 +536,8 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
   }
 
   // Set a default boot class path if we didn't get an explicit one via command line.
+
+  // ClassPath 设置
   if (getenv("BOOTCLASSPATH") != nullptr) {
     args.SetIfMissing(M::BootClassPath, std::string(getenv("BOOTCLASSPATH")));
   }
@@ -545,6 +559,7 @@ bool ParsedOptions::DoParse(const RuntimeOptions& options,
     }
   }
 
+  //开发者复写配置
   MaybeOverrideVerbosity();
 
   SetRuntimeDebugFlagsEnabled(args.Get(M::SlowDebug));

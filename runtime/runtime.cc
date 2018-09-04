@@ -184,6 +184,7 @@ static constexpr double kNormalMaxLoadFactor = 0.7;
 // barrier config.
 static constexpr double kExtraDefaultHeapGrowthMultiplier = kUseReadBarrier ? 1.0 : 0.0;
 
+//虚拟机单例
 Runtime* Runtime::instance_ = nullptr;
 
 struct TraceConfig {
@@ -194,6 +195,7 @@ struct TraceConfig {
 };
 
 namespace {
+//蛤？貌似 google 想在 mac os 上使用 ART
 #ifdef __APPLE__
 inline char** GetEnviron() {
   // When Google Test is built as a framework on MacOS X, the environ variable
@@ -622,11 +624,13 @@ void Runtime::SweepSystemWeaks(IsMarkedVisitor* visitor) {
   }
 }
 
+//解析配置参数
 bool Runtime::ParseOptions(const RuntimeOptions& raw_options,
                            bool ignore_unrecognized,
                            RuntimeArgumentMap* runtime_options) {
   Locks::Init();
   InitLogging(/* argv */ nullptr, Abort);  // Calls Locks::Init() as a side effect.
+  //解析，返回结果 *
   bool parsed = ParsedOptions::Parse(raw_options, ignore_unrecognized, runtime_options);
   if (!parsed) {
     LOG(ERROR) << "Failed to parse options";
@@ -643,11 +647,14 @@ static bool IsSafeToCallAbort() NO_THREAD_SAFETY_ANALYSIS {
   return runtime != nullptr && runtime->IsStarted() && !runtime->IsShuttingDownLocked();
 }
 
+//真正创建虚拟机
 bool Runtime::Create(RuntimeArgumentMap&& runtime_options) {
   // TODO: acquire a static mutex on Runtime to avoid racing.
+  //已经初始化过了
   if (Runtime::instance_ != nullptr) {
     return false;
   }
+  //new *
   instance_ = new Runtime;
   Locks::SetClientCallback(IsSafeToCallAbort);
   if (!instance_->Init(std::move(runtime_options))) {
@@ -662,6 +669,8 @@ bool Runtime::Create(RuntimeArgumentMap&& runtime_options) {
 
 bool Runtime::Create(const RuntimeOptions& raw_options, bool ignore_unrecognized) {
   RuntimeArgumentMap runtime_options;
+  //1.解析配置参数 *
+  //2.创建虚拟机 *
   return ParseOptions(raw_options, ignore_unrecognized, &runtime_options) &&
       Create(std::move(runtime_options));
 }

@@ -1135,20 +1135,24 @@ jstring JavaVMExt::GetLibrarySearchPath(JNIEnv* env, jobject class_loader) {
 }
 
 // JNI Invocation interface.
-
+//Art 虚拟机启动入口
 extern "C" jint JNI_CreateJavaVM(JavaVM** p_vm, JNIEnv** p_env, void* vm_args) {
   ScopedTrace trace(__FUNCTION__);
+  //启动参数 -> 键值对
   const JavaVMInitArgs* args = static_cast<JavaVMInitArgs*>(vm_args);
   if (JavaVMExt::IsBadJniVersion(args->version)) {
     LOG(ERROR) << "Bad JNI version passed to CreateJavaVM: " << args->version;
     return JNI_EVERSION;
   }
+  //启动键值对 -> 配置对象
   RuntimeOptions options;
   for (int i = 0; i < args->nOptions; ++i) {
     JavaVMOption* option = &args->options[i];
     options.push_back(std::make_pair(std::string(option->optionString), option->extraInfo));
   }
   bool ignore_unrecognized = args->ignoreUnrecognized;
+
+  //创建虚拟机环境: 跳入(后面需要跳入用 * 代替)
   if (!Runtime::Create(options, ignore_unrecognized)) {
     return JNI_ERR;
   }
