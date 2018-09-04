@@ -486,6 +486,7 @@ JavaVMExt::~JavaVMExt() {
 // Checking "globals" and "weak_globals" usually requires locks, but we
 // don't need the locks to check for validity when constructing the
 // object. Use NO_THREAD_SAFETY_ANALYSIS for this.
+//create vm
 std::unique_ptr<JavaVMExt> JavaVMExt::Create(Runtime* runtime,
                                              const RuntimeArgumentMap& runtime_options,
                                              std::string* error_msg) NO_THREAD_SAFETY_ANALYSIS {

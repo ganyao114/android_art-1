@@ -47,6 +47,7 @@ static constexpr bool kMadviseZeroes = false;
 #define HAVE_MREMAP_SYSCALL false
 #endif
 
+//内存映射
 // Used to keep track of mmap segments.
 //
 // On 64b systems not supporting MAP_32BIT, the implementation of MemMap will do a linear scan

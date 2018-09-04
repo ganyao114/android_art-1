@@ -316,11 +316,13 @@ Heap::Heap(size_t initial_size,
     requested_alloc_space_begin = kPreferredAllocSpaceBegin;
   }
 
+  //加载 /system/framework/boot.art
   // Load image space(s).
   if (space::ImageSpace::LoadBootImage(image_file_name,
                                        image_instruction_set,
                                        &boot_image_spaces_,
                                        &requested_alloc_space_begin)) {
+    //加载完毕后，添加到堆的前几个 Space 中                                     
     for (auto space : boot_image_spaces_) {
       AddSpace(space);
     }

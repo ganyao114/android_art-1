@@ -837,6 +837,7 @@ Thread* Thread::Attach(const char* thread_name,
     // so that thread needs a two-stage attach. Regular threads don't need this hack.
     // In the compiler, all threads need this hack, because no-one's going to be getting
     // a native peer!
+    //创建 Native 层的副本
     if (create_peer) {
       self->CreatePeer(thread_name, as_daemon, thread_group);
       if (self->IsExceptionPending()) {
@@ -872,6 +873,8 @@ Thread* Thread::Attach(const char* thread_name, bool as_daemon, jobject thread_p
       ScopedObjectAccess soa(self);
       self->tlsPtr_.opeer = soa.Decode<mirror::Object>(thread_peer).Ptr();
     }
+
+    //绑定 JniEnv
     self->GetJniEnv()->SetLongField(thread_peer,
                                     WellKnownClasses::java_lang_Thread_nativePeer,
                                     reinterpret_cast<jlong>(self));

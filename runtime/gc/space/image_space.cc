@@ -1495,6 +1495,7 @@ static bool CheckSpace(const std::string& cache_filename, std::string* error_msg
   return true;
 }
 
+//创建 Image
 std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_location,
                                                         const InstructionSet image_isa,
                                                         bool secondary_image,
@@ -1522,6 +1523,8 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
   bool dalvik_cache_exists = false;
   bool is_global_cache = true;
   std::string dalvik_cache;
+
+  //生成 boot image 的路径，不止有 boot.art 
   bool found_image = FindImageFilenameImpl(image_location,
                                            image_isa,
                                            &has_system,
@@ -1550,6 +1553,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
       PruneDalvikCache(image_isa);
 
       // Re-evaluate the image.
+      //重试
       found_image = FindImageFilenameImpl(image_location,
                                           image_isa,
                                           &has_system,
@@ -1575,6 +1579,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
   if (found_image && has_system && has_cache) {
     std::string local_error_msg;
     // Check that the files are matching.
+    //检查 sum
     if (ChecksumsMatch(system_filename.c_str(), cache_filename.c_str(), &local_error_msg)) {
       std::unique_ptr<ImageSpace> relocated_space =
           ImageSpaceLoader::Load(image_location,
@@ -1703,6 +1708,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
   return nullptr;
 }
 
+//加载 framework/boot.art
 bool ImageSpace::LoadBootImage(const std::string& image_file_name,
                                const InstructionSet image_instruction_set,
                                std::vector<space::ImageSpace*>* boot_image_spaces,

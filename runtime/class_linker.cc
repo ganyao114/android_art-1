@@ -920,6 +920,7 @@ struct TrampolineCheckData {
   bool error;
 };
 
+//初始化 ClassLinker，从 Boot Image(/system/framework/boot.art)
 bool ClassLinker::InitFromBootImage(std::string* error_msg) {
   VLOG(startup) << __FUNCTION__ << " entering";
   CHECK(!init_done_);
@@ -927,6 +928,8 @@ bool ClassLinker::InitFromBootImage(std::string* error_msg) {
   Runtime* const runtime = Runtime::Current();
   Thread* const self = Thread::Current();
   gc::Heap* const heap = runtime->GetHeap();
+
+  // /system/framework/boot.art
   std::vector<gc::space::ImageSpace*> spaces = heap->GetBootImageSpaces();
   CHECK(!spaces.empty());
   uint32_t pointer_size_unchecked = spaces[0]->GetImageHeader().GetPointerSizeUnchecked();
@@ -939,6 +942,7 @@ bool ClassLinker::InitFromBootImage(std::string* error_msg) {
     // Only the Aot compiler supports having an image with a different pointer size than the
     // runtime. This happens on the host for compiling 32 bit tests since we use a 64 bit libart
     // compiler. We may also use 32 bit dex2oat on a system with 64 bit apps.
+    //如果 Boot.art 的镜像格式 != 虚拟机的格式 如 32位 ！= 64 位，中断初始化
     if (image_pointer_size_ != kRuntimePointerSize) {
       *error_msg = StringPrintf("Runtime must use current image pointer size: %zu vs %zu",
                                 static_cast<size_t>(image_pointer_size_),
@@ -954,6 +958,8 @@ bool ClassLinker::InitFromBootImage(std::string* error_msg) {
   const char* image_file_location = oat_files[0]->GetOatHeader().
       GetStoreValueByKey(OatHeader::kImageLocationKey);
   CHECK(image_file_location == nullptr || *image_file_location == 0);
+
+  //4种 java 函数跳板入口
   quick_resolution_trampoline_ = default_oat_header.GetQuickResolutionTrampoline();
   quick_imt_conflict_trampoline_ = default_oat_header.GetQuickImtConflictTrampoline();
   quick_generic_jni_trampoline_ = default_oat_header.GetQuickGenericJniTrampoline();

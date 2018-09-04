@@ -41,7 +41,7 @@
 #include "thread_list.h"
 #include "verifier/method_verifier.h"
 #include "well_known_classes.h"
-
+//对象的 Monitor 锁相关
 namespace art {
 
 using android::base::StringPrintf;

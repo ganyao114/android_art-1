@@ -195,7 +195,7 @@ struct TraceConfig {
 };
 
 namespace {
-//蛤？貌似 google 想在 mac os 上使用 ART
+//蛤？貌似 google 想在 mac os 上使用 ART，可能给 Chrome 用的
 #ifdef __APPLE__
 inline char** GetEnviron() {
   // When Google Test is built as a framework on MacOS X, the environ variable
@@ -211,6 +211,7 @@ inline char** GetEnviron() { return environ; }
 #endif
 }  // namespace
 
+//构造函数,一堆参数，加上缺省默认值
 Runtime::Runtime()
     : resolution_method_(nullptr),
       imt_conflict_method_(nullptr),
@@ -657,6 +658,8 @@ bool Runtime::Create(RuntimeArgumentMap&& runtime_options) {
   //new *
   instance_ = new Runtime;
   Locks::SetClientCallback(IsSafeToCallAbort);
+
+  //初始化虚拟机 *
   if (!instance_->Init(std::move(runtime_options))) {
     // TODO: Currently deleting the instance will abort the runtime on destruction. Now This will
     // leak memory, instead. Fix the destructor. b/19100793.
@@ -1118,18 +1121,23 @@ void Runtime::SetSentinel(mirror::Object* sentinel) {
 bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   // (b/30160149): protect subprocesses from modifications to LD_LIBRARY_PATH, etc.
   // Take a snapshot of the environment at the time the runtime was created, for use by Exec, etc.
+
+  //快照运行环境
   env_snapshot_.TakeSnapshot();
 
+  //运行配置参数
   using Opt = RuntimeArgumentMap;
   Opt runtime_options(std::move(runtime_options_in));
   ScopedTrace trace(__FUNCTION__);
   CHECK_EQ(sysconf(_SC_PAGE_SIZE), kPageSize);
 
+  //桥接 Log 接口
   // Early override for logging output.
   if (runtime_options.Exists(Opt::UseStderrLogger)) {
     android::base::SetLogger(android::base::StderrLogger);
   }
 
+  // 内存映射初始化
   MemMap::Init();
 
   // Try to reserve a dedicated fault page. This is allocated for clobbered registers and sentinels.
@@ -1158,14 +1166,19 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   VLOG(startup) << "Runtime::Init -verbose:startup enabled";
 
+  //准原子操作：CAS 64 实现,初始化 *
   QuasiAtomic::Startup();
 
+  //OAT 文件管理 *
   oat_file_manager_ = new OatFileManager;
 
   Thread::SetSensitiveThreadHook(runtime_options.GetOrDefault(Opt::HookIsSensitiveThread));
+
+  //监控初始化
   Monitor::Init(runtime_options.GetOrDefault(Opt::LockProfThreshold),
                 runtime_options.GetOrDefault(Opt::StackDumpLockProfThreshold));
 
+  //一些配置的读取
   boot_class_path_string_ = runtime_options.ReleaseOrDefault(Opt::BootClassPath);
   class_path_string_ = runtime_options.ReleaseOrDefault(Opt::ClassPath);
   properties_ = runtime_options.ReleaseOrDefault(Opt::PropertiesList);
@@ -1185,15 +1198,22 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   default_stack_size_ = runtime_options.GetOrDefault(Opt::StackSize);
   use_tombstoned_traces_ = runtime_options.GetOrDefault(Opt::UseTombstonedTraces);
+
+  //如果不是在 Android 中运行 ART
 #if !defined(ART_TARGET_ANDROID)
   CHECK(!use_tombstoned_traces_)
       << "-Xusetombstonedtraces is only supported in an Android environment";
 #endif
+
+  //依然是配置读取
   stack_trace_file_ = runtime_options.ReleaseOrDefault(Opt::StackTraceFile);
 
   compiler_executable_ = runtime_options.ReleaseOrDefault(Opt::Compiler);
+
+  //ART 编译时设置的参数配置
   compiler_options_ = runtime_options.ReleaseOrDefault(Opt::CompilerOptions);
   for (StringPiece option : Runtime::Current()->GetCompilerOptions()) {
+    //Java Debug 开关
     if (option.starts_with("--debuggable")) {
       SetJavaDebuggable(true);
       break;
@@ -1205,8 +1225,11 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   max_spins_before_thin_lock_inflation_ =
       runtime_options.GetOrDefault(Opt::MaxSpinsBeforeThinLockInflation);
 
+  //对象锁 List
   monitor_list_ = new MonitorList;
   monitor_pool_ = MonitorPool::Create();
+
+  //线程 List
   thread_list_ = new ThreadList(runtime_options.GetOrDefault(Opt::ThreadSuspendTimeout));
   intern_table_ = new InternTable;
 
@@ -1219,11 +1242,14 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   // by default and we only enable them if:
   // (a) runtime was started with a flag that enables the checks, or
   // (b) Zygote forked a new process that is not exempt (see ZygoteHooks).
+  //是否开启隐藏 API 的检查，Android P 引入的特性
   bool do_hidden_api_checks = runtime_options.Exists(Opt::HiddenApiChecks);
   DCHECK(!is_zygote_ || !do_hidden_api_checks);
   // TODO pass the actual enforcement policy in, rather than just a single bit.
   // As is, we're encoding some logic here about which specific policy to use, which would be better
   // controlled by the framework.
+
+  //如果开启检查，则会过滤黑灰名单中 API 的使用
   hidden_api_policy_ = do_hidden_api_checks
       ? hiddenapi::EnforcementPolicy::kDarkGreyAndBlackList
       : hiddenapi::EnforcementPolicy::kNoChecks;
@@ -1231,6 +1257,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   no_sig_chain_ = runtime_options.Exists(Opt::NoSigChain);
   force_native_bridge_ = runtime_options.Exists(Opt::ForceNativeBridge);
 
+  //读取 CPU 支持的 ABI 格式
   Split(runtime_options.GetOrDefault(Opt::CpuAbiList), ',', &cpu_abilist_);
 
   fingerprint_ = runtime_options.ReleaseOrDefault(Opt::Fingerprint);
@@ -1251,6 +1278,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   //   agents_.push_back(lib);
   // }
 
+  //初始化 java 堆
   float foreground_heap_growth_multiplier;
   if (is_low_memory_mode_ && !runtime_options.Exists(Opt::ForegroundHeapGrowthMultiplier)) {
     // If low memory mode, use 1.0 as the multiplier by default.
@@ -1260,7 +1288,11 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
         runtime_options.GetOrDefault(Opt::ForegroundHeapGrowthMultiplier) +
             kExtraDefaultHeapGrowthMultiplier;
   }
+
+  //gc 配置
   XGcOption xgc_option = runtime_options.GetOrDefault(Opt::GcOption);
+
+  //实例化堆 *
   heap_ = new gc::Heap(runtime_options.GetOrDefault(Opt::MemoryInitialSize),
                        runtime_options.GetOrDefault(Opt::HeapGrowthLimit),
                        runtime_options.GetOrDefault(Opt::HeapMinFree),
@@ -1302,6 +1334,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   dump_gc_performance_on_shutdown_ = runtime_options.Exists(Opt::DumpGCPerformanceOnShutdown);
 
+  //调试器初始化
   jdwp_options_ = runtime_options.GetOrDefault(Opt::JdwpOptions);
   jdwp_provider_ = runtime_options.GetOrDefault(Opt::JdwpProvider);
   switch (jdwp_provider_) {
@@ -1342,6 +1375,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   callbacks_->AddThreadLifecycleCallback(Dbg::GetThreadLifecycleCallback());
   callbacks_->AddClassLoadCallback(Dbg::GetClassLoadCallback());
 
+  //JIT 配置
   jit_options_.reset(jit::JitOptions::CreateFromRuntimeArguments(runtime_options));
   if (IsAotCompiler()) {
     // If we are already the compiler at this point, we must be dex2oat. Don't create the jit in
@@ -1354,11 +1388,14 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   // Use MemMap arena pool for jit, malloc otherwise. Malloc arenas are faster to allocate but
   // can't be trimmed as easily.
+
+  //jemalloc
   const bool use_malloc = IsAotCompiler();
   arena_pool_.reset(new ArenaPool(use_malloc, /* low_4gb */ false));
   jit_arena_pool_.reset(
       new ArenaPool(/* use_malloc */ false, /* low_4gb */ false, "CompilerMetadata"));
 
+  //如果是 OAT
   if (IsAotCompiler() && Is64BitInstructionSet(kRuntimeISA)) {
     // 4gb, no malloc. Explanation in header.
     low_4gb_arena_pool_.reset(new ArenaPool(/* use_malloc */ false, /* low_4gb */ true));
@@ -1415,6 +1452,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   }
 
   std::string error_msg;
+
+  //create jvm *
   java_vm_ = JavaVMExt::Create(this, runtime_options, &error_msg);
   if (java_vm_.get() == nullptr) {
     LOG(ERROR) << "Could not initialize JavaVMExt: " << error_msg;
@@ -1430,6 +1469,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   // ClassLinker needs an attached thread, but we can't fully attach a thread without creating
   // objects. We can't supply a thread group yet; it will be fixed later. Since we are the main
   // thread, we do not get a java peer.
+
+  //Attche 主线程 *
   Thread* self = Thread::Attach("main", false, nullptr, false);
   CHECK_EQ(self->GetThreadId(), ThreadList::kMainThreadId);
   CHECK(self != nullptr);
@@ -1443,12 +1484,18 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   GetHeap()->EnableObjectValidation();
 
   CHECK_GE(GetHeap()->GetContinuousSpaces().size(), 1U);
+
+  //初始化对应的 Class Linker
   if (UNLIKELY(IsAotCompiler())) {
     class_linker_ = new AotClassLinker(intern_table_);
   } else {
     class_linker_ = new ClassLinker(intern_table_);
   }
+
+  //ART虚拟机的堆包含有三个连续空间和一个不连续空间。三个连续空间分别用来分配不同的对象。当第一个连续空间不是Image空间时，就表明当前进程不是Zygote进程，而是安装应用程序时启动的一个dex2oat进程。
+  //安装应用程序时启动的dex2oat进程也会在内部创建一个ART虚拟机，不过这个ART虚拟机是用来将DEX字节码编译成本地机器指令的，而Zygote进程创建的ART虚拟机是用来运行应用程序的。
   if (GetHeap()->HasBootImageSpace()) {
+    //初始化 Class Linker *
     bool result = class_linker_->InitFromBootImage(&error_msg);
     if (!result) {
       LOG(ERROR) << "Could not initialize from image: " << error_msg;

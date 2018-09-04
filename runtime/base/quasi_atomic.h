@@ -45,7 +45,10 @@ class Mutex;
 // non-quasiatomic operations on the same address, nor about
 // quasiatomic operations that are performed on partially-overlapping
 // memory.
+// 一种 64 位原子操作的实现，脱离传统的自定义内存屏障 和 64位准原子操作
 class QuasiAtomic {
+
+  //CPU 架构不支持 CAS 64 指令，则只能使用 Mutex 进行软实现
   static constexpr bool NeedSwapMutexes(InstructionSet isa) {
     // TODO - mips64 still need this for Cas64 ???
     return (isa == InstructionSet::kMips) || (isa == InstructionSet::kMips64);
@@ -139,10 +142,13 @@ class QuasiAtomic {
   // This has "strong" semantics; if it fails then it is guaranteed that
   // at some point during the execution of Cas64, *addr was not equal to
   // old_value.
+  //64 位 CAS 操作
   static bool Cas64(int64_t old_value, int64_t new_value, volatile int64_t* addr) {
     if (!NeedSwapMutexes(kRuntimeISA)) {
+      //硬实现
       return __sync_bool_compare_and_swap(addr, old_value, new_value);
     } else {
+      //软实现
       return SwapMutexCas64(old_value, new_value, addr);
     }
   }

@@ -124,7 +124,7 @@ static constexpr bool kUseRosAlloc = true;
 
 // If true, use thread-local allocation stack.
 static constexpr bool kUseThreadLocalAllocationStack = true;
-
+// java 堆
 class Heap {
  public:
   // If true, measure the total allocation time.
