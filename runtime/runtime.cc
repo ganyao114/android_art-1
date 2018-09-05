@@ -1426,6 +1426,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   if (!no_sig_chain_) {
     // Dex2Oat's Runtime does not need the signal chain or the fault handler.
     if (implicit_null_checks_ || implicit_so_checks_ || implicit_suspend_checks_) {
+
+      //初始化异常管理
       fault_manager.Init();
 
       // These need to be in a specific order.  The null point check handler must be

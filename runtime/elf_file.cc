@@ -1781,6 +1781,7 @@ ElfFile* ElfFile::Open(File* file, int mmap_prot, int mmap_flags, std::string* e
   }
 }
 
+//派发 32 / 64 位的实现
 #define DELEGATE_TO_IMPL(func, ...) \
   if (elf64_.get() != nullptr) { \
     return elf64_->func(__VA_ARGS__); \

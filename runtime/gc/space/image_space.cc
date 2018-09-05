@@ -746,7 +746,7 @@ class ImageSpaceLoader {
     // set yet at this point.
     if (oat_file == nullptr) {
       TimingLogger::ScopedTiming timing("OpenOatFile", &logger);
-      //打开 OAT 文件
+      //打开 OAT 文件 *
       space->oat_file_ = OpenOatFile(*space, image_filename, error_msg);
       if (space->oat_file_ == nullptr) {
         DCHECK(!error_msg->empty());
@@ -757,6 +757,7 @@ class ImageSpaceLoader {
       space->oat_file_non_owned_ = oat_file;
     }
 
+    //验证 OAT 文件
     if (validate_oat_file) {
       TimingLogger::ScopedTiming timing("ValidateOatFile", &logger);
       CHECK(space->oat_file_ != nullptr);
@@ -771,6 +772,7 @@ class ImageSpaceLoader {
     // If oat_file is null, then it is the boot image space. Use oat_file_non_owned_ from the space
     // to set the runtime methods.
     CHECK_EQ(oat_file != nullptr, image_header->IsAppImage());
+    //如果是 App 的 OAT 文件
     if (image_header->IsAppImage()) {
       CHECK_EQ(runtime->GetResolutionMethod(),
                image_header->GetImageMethod(ImageHeader::kResolutionMethod));

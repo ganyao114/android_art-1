@@ -143,6 +143,7 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
     mmap_reuse = false;
   }
   CHECK(!mmap_reuse || mmap_addr != nullptr);
+  //映射到内存中
   std::unique_ptr<MemMap> mmap(MemMap::MapFileAtAddress(
       mmap_addr,
       vdex_length,
@@ -159,6 +160,7 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
     return nullptr;
   }
 
+  //new VdexFile 结构，传入 map 对象
   std::unique_ptr<VdexFile> vdex(new VdexFile(mmap.release()));
   if (!vdex->IsValid()) {
     *error_msg = "Vdex file is not valid";
@@ -167,6 +169,7 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
 
   if (unquicken && vdex->HasDexSection()) {
     std::vector<std::unique_ptr<const DexFile>> unique_ptr_dex_files;
+    //解析所有 Dex 结构 *
     if (!vdex->OpenAllDexFiles(&unique_ptr_dex_files, error_msg)) {
       return nullptr;
     }
@@ -197,6 +200,7 @@ const uint8_t* VdexFile::GetNextDexFileData(const uint8_t* cursor) const {
   }
 }
 
+//解析所有 Dex
 bool VdexFile::OpenAllDexFiles(std::vector<std::unique_ptr<const DexFile>>* dex_files,
                                std::string* error_msg) {
   const ArtDexFileLoader dex_file_loader;
@@ -208,6 +212,7 @@ bool VdexFile::OpenAllDexFiles(std::vector<std::unique_ptr<const DexFile>>* dex_
     // TODO: Supply the location information for a vdex file.
     static constexpr char kVdexLocation[] = "";
     std::string location = DexFileLoader::GetMultiDexLocation(i, kVdexLocation);
+    //使用 ArtDexFileLoader 解析该段 Dex *
     std::unique_ptr<const DexFile> dex(dex_file_loader.OpenWithDataSection(
         dex_file_start,
         size,
@@ -222,6 +227,7 @@ bool VdexFile::OpenAllDexFiles(std::vector<std::unique_ptr<const DexFile>>* dex_
     if (dex == nullptr) {
       return false;
     }
+    //推入 Dex 缓存
     dex_files->push_back(std::move(dex));
   }
   return true;

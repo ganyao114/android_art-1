@@ -131,6 +131,10 @@ FaultManager::FaultManager() : initialized_(false) {
 FaultManager::~FaultManager() {
 }
 
+/**
+ ART中处理linux信号是通过 FaultManger来处理，对于特定的信号，先经过ART中的信号处理函数 art_fault_handler进行处理，在ART中能够识别的情况下，把这些信号转换为Java工程师能够识别的 Java Exception 抛出，以便于工程师处理异常。
+ https://blog.csdn.net/hl09083253cy/article/details/78534968
+ **/
 void FaultManager::Init() {
   CHECK(!initialized_);
   sigset_t mask;

@@ -182,6 +182,7 @@ class OatFileBase : public OatFile {
   DISALLOW_COPY_AND_ASSIGN(OatFileBase);
 };
 
+//加载并且解析 OAT 文件
 template <typename kOatFileBaseSubType>
 OatFileBase* OatFileBase::OpenOatFile(int zip_fd,
                                       const std::string& vdex_filename,
@@ -196,8 +197,24 @@ OatFileBase* OatFileBase::OpenOatFile(int zip_fd,
                                       std::string* error_msg) {
   std::unique_ptr<OatFileBase> ret(new kOatFileBaseSubType(location, executable));
 
+  //预计算一个和共享库相关的值，用来优化的，具体什么后面分析
   ret->PreLoad();
-
+  //开始加载这里有两种实现，和 OAT 文件的编译格式相关 *
+  /**
+    1. 如果编译时指定了ART_USE_PORTABLE_COMPILER宏，并且参数executable为true，那么就通过OatFile类的静态成员函数OpenDlopen来加载指定的OAT文件。OatFile类的静态成员函数OpenDlopen直接通过动态链接器提供的dlopen函数来加载OAT文件。
+    2. 其余情况下，通过OatFile类的静态成员函数OpenElfFile来手动加载指定的OAT文件。这种方式是按照ELF文件格式来解析要加载的OAT文件的，并且根据解析获得的信息将OAT里面相应的段加载到内存中来。
+  **/
+  /**
+      ART运行时支持两种类型的Backend：Portable和Quick。Portable类型的Backend通过集成在LLVM编译框架里面的一个称为MCLinker的链接器来生成本地机器指令。
+    关于MCLinker的更多知识，可以参考https://code.google.com/p/mclinker。简单来说，假设我们有一个模块A，它依赖于模块B、C和D，那么在为模块A生成本地机器指令时，指出它依赖于模块B、C和D就行了。
+    在生成的OAT文件中会记录好这些依赖关系，这是ELF文件格式本来就支持的特性。这些OAT文件要通过系统的动态链接器提供的dlopen函数来加载。函数dlopen在加载OAT文件的时候
+    ，会通过重定位技术来处理好它与其它模块的依赖关系，使得它能够调用其它模块提供的接口。这个实际上就通用的编译器、静态连接器以及动态链接器合作在一起干的事情，MCLinker扮演的就是静态链接器的角色。
+    既然是通用的技术，因为就称能产生这种OAT文件的Backend为Portable类型的。
+      另一方面，Quick类型的Backend生成的本地机器指令用另外一种方式来处理依赖模块之间的依赖关系。简单来说，就是ART运行时会在每一个线程的TLS（线程本地区域）提供一个函数表。
+    有了这个函数表之后，Quick类型的Backend生成的本地机器指令就可以通过它来调用其它模块的函数。也就是说，Quick类型的Backend生成的本地机器指令要依赖于ART运行时提供的函数表。
+    这使得Quick类型的Backend生成的OAT文件在加载时不需要再处理模式之间的依赖关系。再通俗一点说的就是Quick类型的Backend生成的OAT文件在加载时不需要重定位，因此就不需要通过系统的动态链接器提供的dlopen函数来加载。
+    由于省去重定位这个操作，Quick类型的Backend生成的OAT文件在加载时就会更快，这也是称为Quick的缘由。
+  **/
   if (!ret->Load(elf_filename,
                  oat_file_begin,
                  writable,
@@ -207,19 +224,24 @@ OatFileBase* OatFileBase::OpenOatFile(int zip_fd,
     return nullptr;
   }
 
+  //计算 OAT 文件中各个段的偏移 *
   if (!ret->ComputeFields(requested_base, elf_filename, error_msg)) {
     return nullptr;
   }
 
+  //加载 Vdex 段 *
   if (!ret->LoadVdex(vdex_filename, writable, low_4gb, error_msg)) {
     return nullptr;
   }
 
+  //预处理 *
   ret->PreSetup(elf_filename);
 
+  //真正解析 OAT 结构的逻辑 *
   if (!ret->Setup(zip_fd, abs_dex_location, error_msg)) {
     return nullptr;
   }
+
 
   return ret.release();
 }
@@ -238,6 +260,7 @@ OatFileBase* OatFileBase::OpenOatFile(int zip_fd,
                                       const char* abs_dex_location,
                                       std::string* error_msg) {
   std::unique_ptr<OatFileBase> ret(new kOatFileBaseSubType(oat_location, executable));
+
 
   if (!ret->Load(oat_fd,
                  oat_file_begin,
@@ -265,10 +288,16 @@ OatFileBase* OatFileBase::OpenOatFile(int zip_fd,
   return ret.release();
 }
 
+/**
+ * Vdex 段是 Android 8.0 新加入的段
+ * Vdex 包含了原来的 Dex 代码
+**/
+
 bool OatFileBase::LoadVdex(const std::string& vdex_filename,
                            bool writable,
                            bool low_4gb,
                            std::string* error_msg) {
+  //load vdex *                           
   vdex_ = VdexFile::OpenAtAddress(vdex_begin_,
                                   vdex_end_ - vdex_begin_,
                                   vdex_begin_ != nullptr /* mmap_reuse */,
@@ -316,10 +345,18 @@ bool OatFileBase::LoadVdex(int vdex_fd,
   return true;
 }
 
+//计算 OAT 文件中各个段的偏移
+/**
+ *  1. oatdata native code
+ *  2. oatbss 变量
+ *  3. vdex dex smali代码
+**/
 bool OatFileBase::ComputeFields(uint8_t* requested_base,
                                 const std::string& file_path,
                                 std::string* error_msg) {
   std::string symbol_error_msg;
+  //导出 oatdata 符号的首地址 *
+  //符号oatdata的地址即为OAT文件里面的oatdata段加载到内存中的开始地址
   begin_ = FindDynamicSymbolAddress("oatdata", &symbol_error_msg);
   if (begin_ == nullptr) {
     *error_msg = StringPrintf("Failed to find oatdata symbol in '%s' %s",
@@ -337,6 +374,8 @@ bool OatFileBase::ComputeFields(uint8_t* requested_base,
         begin_, requested_base);
     return false;
   }
+  //导出 oatlastword 符号的首地址 *
+  //符号oatlastword的地址即为OAT文件里面的oatexec加载到内存中的结束地址
   end_ = FindDynamicSymbolAddress("oatlastword", &symbol_error_msg);
   if (end_ == nullptr) {
     *error_msg = StringPrintf("Failed to find oatlastword symbol in '%s' %s",
@@ -345,8 +384,9 @@ bool OatFileBase::ComputeFields(uint8_t* requested_base,
     return false;
   }
   // Readjust to be non-inclusive upper bound.
+  //加上 oatlastword 自身占用的大小
   end_ += sizeof(uint32_t);
-
+  //导出 bss 段地址
   bss_begin_ = const_cast<uint8_t*>(FindDynamicSymbolAddress("oatbss", &symbol_error_msg));
   if (bss_begin_ == nullptr) {
     // No .bss section.
@@ -358,6 +398,7 @@ bool OatFileBase::ComputeFields(uint8_t* requested_base,
       return false;
     }
     // Readjust to be non-inclusive upper bound.
+    //加上 oatbsslastword 自身占用的大小
     bss_end_ += sizeof(uint32_t);
     // Find bss methods if present.
     bss_methods_ =
@@ -366,6 +407,7 @@ bool OatFileBase::ComputeFields(uint8_t* requested_base,
     bss_roots_ = const_cast<uint8_t*>(FindDynamicSymbolAddress("oatbssroots", &symbol_error_msg));
   }
 
+  //vdex 段偏移
   vdex_begin_ = const_cast<uint8_t*>(FindDynamicSymbolAddress("oatdex", &symbol_error_msg));
   if (vdex_begin_ == nullptr) {
     // No .vdex section.
@@ -507,7 +549,10 @@ static void DCheckIndexToBssMapping(OatFile* oat_file,
   }
 }
 
+//解析 OAT， 注意这是 dlopen 对应的实现，还有 elfopen 对应的实现
 bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* error_msg) {
+
+  //OAT 头 *
   if (!GetOatHeader().IsValid()) {
     std::string cause = GetOatHeader().GetValidationErrorMessage();
     *error_msg = StringPrintf("Invalid oat header for '%s': %s",
@@ -527,7 +572,7 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
                               key_value_store_size);
     return false;
   }
-
+  //oat dex 文件的偏移
   size_t oat_dex_files_offset = GetOatHeader().GetOatDexFilesOffset();
   if (oat_dex_files_offset < GetOatHeader().GetHeaderSize() || oat_dex_files_offset > Size()) {
     *error_msg = StringPrintf("In oat file '%s' found invalid oat dex files offset: "
@@ -538,8 +583,11 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
                               Size());
     return false;
   }
+
+  //OatDexFile 开始地址
   const uint8_t* oat = Begin() + oat_dex_files_offset;  // Jump to the OatDexFile records.
 
+  //检查各个段地址是否正常
   DCHECK_GE(static_cast<size_t>(pointer_size), alignof(GcRoot<mirror::Object>));
   if (!IsAligned<kPageSize>(bss_begin_) ||
       !IsAlignedParam(bss_methods_, static_cast<size_t>(pointer_size)) ||
@@ -576,7 +624,10 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
   DCHECK_EQ(boot_image_tables != nullptr, boot_image_tables_end != nullptr);
   uint32_t dex_file_count = GetOatHeader().GetDexFileCount();
   oat_dex_files_storage_.reserve(dex_file_count);
+
+  //遍历所有 dex
   for (size_t i = 0; i < dex_file_count; i++) {
+    //DEX文件路径大小，保存在变量dex_file_location_size中
     uint32_t dex_file_location_size;
     if (UNLIKELY(!ReadOatDexFileData(*this, &oat, &dex_file_location_size))) {
       *error_msg = StringPrintf("In oat file '%s' found OatDexFile #%zu truncated after dex file "
@@ -598,6 +649,8 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
                                 i);
       return false;
     }
+
+    //DEX文件路径，保存在变量dex_file_location_data中
     const char* dex_file_location_data = reinterpret_cast<const char*>(oat);
     oat += dex_file_location_size;
 
@@ -605,6 +658,7 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
         abs_dex_location,
         std::string(dex_file_location_data, dex_file_location_size));
 
+    //DEX文件检验和，保存在变量dex_file_checksum中
     uint32_t dex_file_checksum;
     if (UNLIKELY(!ReadOatDexFileData(*this, &oat, &dex_file_checksum))) {
       *error_msg = StringPrintf("In oat file '%s' found OatDexFile #%zu for '%s' truncated after "
@@ -615,6 +669,7 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
       return false;
     }
 
+    //DEX文件内容在oatdata段的偏移，保存在变量dex_file_offset中
     uint32_t dex_file_offset;
     if (UNLIKELY(!ReadOatDexFileData(*this, &oat, &dex_file_offset))) {
       *error_msg = StringPrintf("In oat file '%s' found OatDexFile #%zu for '%s' truncated "
@@ -777,6 +832,8 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
                                 class_offsets_offset);
       return false;
     }
+
+    //DEX文件包含的类的本地机器指令信息偏移数组，保存在变量class_offsets_pointer中
     const uint32_t* class_offsets_pointer =
         reinterpret_cast<const uint32_t*>(Begin() + class_offsets_offset);
 
@@ -816,10 +873,13 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
                                 dex_file_location.c_str());
       return false;
     }
+
+    //dex file 的数据段
     const DexLayoutSections* const dex_layout_sections = dex_layout_sections_offset != 0
         ? reinterpret_cast<const DexLayoutSections*>(Begin() + dex_layout_sections_offset)
         : nullptr;
 
+    //bss 段中的方法
     const IndexBssMapping* method_bss_mapping;
     const IndexBssMapping* type_bss_mapping;
     const IndexBssMapping* string_bss_mapping;
@@ -1004,6 +1064,7 @@ void DlOpenOatFile::PreLoad() {
 #endif
 }
 
+//使用 DlOPen 进行 load
 bool DlOpenOatFile::Load(const std::string& elf_filename,
                          uint8_t* oat_file_begin,
                          bool writable,
@@ -1014,6 +1075,8 @@ bool DlOpenOatFile::Load(const std::string& elf_filename,
   // TODO: Also try when not executable? The issue here could be re-mapping as writable (as
   //       !executable is a sign that we may want to patch), which may not be allowed for
   //       various reasons.
+
+  //一系列检查
   if (!kUseDlopen) {
     *error_msg = "DlOpen is disabled.";
     return false;
@@ -1042,6 +1105,7 @@ bool DlOpenOatFile::Load(const std::string& elf_filename,
     }
   }
 
+  //dlopen *
   bool success = Dlopen(elf_filename, oat_file_begin, error_msg);
   DCHECK(dlopen_handle_ != nullptr || !success);
 
@@ -1052,6 +1116,7 @@ bool DlOpenOatFile::Dlopen(const std::string& elf_filename,
                            uint8_t* oat_file_begin,
                            std::string* error_msg) {
 #ifdef __APPLE__
+  //mac 没有实现 dlopen，退回去用 openElf 实现
   // The dl_iterate_phdr syscall is missing.  There is similar API on OSX,
   // but let's fallback to the custom loading code for the time being.
   UNUSED(elf_filename, oat_file_begin);
@@ -1064,6 +1129,7 @@ bool DlOpenOatFile::Dlopen(const std::string& elf_filename,
       *error_msg = StringPrintf("Failed to find absolute path for '%s'", elf_filename.c_str());
       return false;
     }
+    //如果 Android 使用 Android 的 dlopen 实现
 #ifdef ART_TARGET_ANDROID
     android_dlextinfo extinfo = {};
     extinfo.flags = ANDROID_DLEXT_FORCE_LOAD |                  // Force-load, don't reuse handle
@@ -1077,6 +1143,7 @@ bool DlOpenOatFile::Dlopen(const std::string& elf_filename,
     }                                                           //   (pic boot image).
     dlopen_handle_ = android_dlopen_ext(absolute_path.get(), RTLD_NOW, &extinfo);
 #else
+    //不是则使用 linux 默认实现
     UNUSED(oat_file_begin);
     static_assert(!kIsTargetBuild || kIsTargetLinux, "host_dlopen_handles_ will leak handles");
     MutexLock mu(Thread::Current(), *Locks::host_dlopen_handles_lock_);
@@ -1472,6 +1539,7 @@ OatFile* OatFile::Open(int zip_fd,
   return with_internal;
 }
 
+//打开并解析 OAT 文件
 OatFile* OatFile::Open(int zip_fd,
                        int vdex_fd,
                        int oat_fd,
@@ -1486,6 +1554,7 @@ OatFile* OatFile::Open(int zip_fd,
 
   std::string vdex_location = GetVdexFilename(oat_location);
 
+  //打开并解析 OAT 文件 *
   OatFile* with_internal = OatFileBase::OpenOatFile<ElfOatFile>(zip_fd,
                                                                 vdex_fd,
                                                                 oat_fd,

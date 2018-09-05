@@ -64,6 +64,41 @@ OatHeader* OatHeader::Create(InstructionSet instruction_set,
                                 variable_data);
 }
 
+/**
+       magic: 标志OAT文件的一个魔数，等于‘oat\n’。
+
+       version: OAT文件版本号，目前的值等于‘007、0’。
+
+       adler32_checksum_: OAT头部检验和。
+
+       instruction_set_: 本地机指令集，有四种取值，分别为  kArm(1)、kThumb2(2)、kX86(3)和kMips(4)。
+
+       dex_file_count_: OAT文件包含的DEX文件个数。
+
+       executable_offset_: oatexec段开始位置与oatdata段开始位置的偏移值。
+
+       interpreter_to_interpreter_bridge_offset_和interpreter_to_compiled_code_bridge_offset_: ART运行时在启动的时候，可以通过-Xint选项指定所有类的方法都是解释执行的，这与传统的虚拟机使用解释器来执行类方法差不多。同时，有些类方法可能没有被翻译成本地机器指令，这时候也要求对它们进行解释执行。这意味着解释执行的类方法在执行的过程中，可能会调用到另外一个也是解释执行的类方法，也可能调用到另外一个按本地机器指令执行的类方法中。OAT文件在内部提供有两段trampoline代码，分别用来从解释器调用另外一个也是通过解释器来执行的类方法和从解释器调用另外一个按照本地机器执行的类方法。这两段trampoline代码的偏移位置就保存在成员变量 interpreter_to_interpreter_bridge_offset_和interpreter_to_compiled_code_bridge_offset_。
+
+       jni_dlsym_lookup_offset_: 类方法在执行的过程中，如果要调用另外一个方法是一个JNI函数，那么就要通过存在放置jni_dlsym_lookup_offset_的一段trampoline代码来调用。
+
+       portable_resolution_trampoline_offset_和quick_resolution_trampoline_offset_: 用来在运行时解析还未链接的类方法的两段trampoline代码。其中，portable_resolution_trampoline_offset_指向的trampoline代码用于Portable类型的Backend生成的本地机器指令，而quick_resolution_trampoline_offset_用于Quick类型的Backend生成的本地机器指令。
+
+       portable_to_interpreter_bridge_offset_和quick_to_interpreter_bridge_offset_: 与interpreter_to_interpreter_bridge_offset_和interpreter_to_compiled_code_bridge_offset_的作用刚好相反，用来在按照本地机器指令执行的类方法中调用解释执行的类方法的两段trampoline代码。其中，portable_to_interpreter_bridge_offset_用于Portable类型的Backend生成的本地机器指令，而quick_to_interpreter_bridge_offset_用于Quick类型的Backend生成的本地机器指令。
+
+       由于每一个应用程序都会依赖于boot.art文件，因此为了节省由打包在应用程序里面的classes.dex生成的OAT文件的体积，上述interpreter_to_interpreter_bridge_offset_、interpreter_to_compiled_code_bridge_offset_、jni_dlsym_lookup_offset_、portable_resolution_trampoline_offset_、portable_to_interpreter_bridge_offset_、quick_resolution_trampoline_offset_和quick_to_interpreter_bridge_offset_七个成员变量指向的trampoline代码段只存在于boot.art文件中。换句话说，在由打包在应用程序里面的classes.dex生成的OAT文件的oatdata段头部中，上述七个成员变量的值均等于0。
+
+       image_file_location_data_: 用来创建Image空间的文件的路径的在内存中的地址。
+
+       image_file_location_size_: 用来创建Image空间的文件的路径的大小。
+
+       image_file_location_oat_data_begin_: 用来创建Image空间的OAT文件的oatdata段在内存的位置。
+
+       image_file_location_oat_checksum_:  用来创建Image空间的OAT文件的检验和。
+
+       上述四个成员变量记录了一个OAT文件所依赖的用来创建Image空间文件以及创建这个Image空间文件所使用的OAT文件的相关信息。
+
+       通过OatFile类的成员函数Setup的第一部分代码的分析，我们就知道了，OAT文件的oatdata段在最开始保存着一个OAT头
+**/
 OatHeader::OatHeader(InstructionSet instruction_set,
                      const InstructionSetFeatures* instruction_set_features,
                      uint32_t dex_file_count,

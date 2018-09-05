@@ -153,7 +153,21 @@ class PACKED(4) OatHeader {
   uint32_t jni_dlsym_lookup_offset_;
   //quick oat 方法 ->(箭头表示调用跳转) jni 方法的 trampoline 代码的偏移位置
   uint32_t quick_generic_jni_trampoline_offset_;
-  //quick oat 方法 -> imt 方法的 trampoline 代码的偏移位置
+  //quick oat 方法 -> imt(接口方法/虚方法 > 43) 方法的 trampoline 代码的偏移位置
+  /**
+    IMT，即 Interface Method Table，保存着一个 Class “实现的” 所有接口函数对应的 ArtMethod 指针，线性表：
+    在 7.0上，这个表是镶嵌在一个对象的 Class所在的内存中的，而在 8.0上，在class中只记录了这个数组的首地址，
+    数组开辟在另外的内存位置；7.0上，table大小是 64，在 8.0上，table大小是 43，这些数据可能是 google根据经验得来的；
+    这个 table应该只是为了性能，为了更快的调用接口函数而准备的一个table，用来记录一定数量的接口函数的实现。
+    那么问题来了，如果接口函数超过这个数量(64/43)后，IMT中存放不完了，怎么办？【这就引出了后面的 IMT Conflict Table】
+    
+    这个table里保存的 ArtMethod有两种情况：
+      1.一种是真正的函数实现，在查找到时，直接使用即可；
+      2.一种是一个 Runtime Method： 
+    可能是 imt_unimplemented_method_ 或者 imt_conflict_method_ ，（这两个函数是在虚拟机创建的时候生成的）
+    可能是 运行时新 Resolve Interface 函数后，新创建的 conflict method，
+    也可能是 quick alloc array 相关的函数实现 art_quick_alloc_array_resolved32_region_tlab；
+   **/
   uint32_t quick_imt_conflict_trampoline_offset_;
   //quick oat 方法 -> 静态类方法的 trampoline 代码的偏移位置,静态类中方法是延迟 resolve 的，需要在调用的时候初始化静态类，就是 resolve 的过程
   uint32_t quick_resolution_trampoline_offset_;

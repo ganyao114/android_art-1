@@ -27,6 +27,34 @@
 #include "mem_map.h"
 #include "quicken_info.h"
 
+/**
+
+Vdex 头
+  地址	字节数	描述	备注	示例含义
+0x00	4	Magic Number	0x76,0x64,0x65,0x78,
+（’v’,’d’,’e’,’x’,）	 
+0x04	4	version	005	 
+0x08	4	number_of_dex_files	Dex个数	01
+0x0c	4	dex_size_	bc f0 06 00	符合后面dex header描述
+0x10	4	verifier_deps_size_	00 00 17 98	
+0x14	4	quickening_info_size_	 	00 00 b2 f4
+0x18	4	未知，是否是VdexFile的类地址？	 	bd e5 c4 1f
+
+Dex：
+地址	字节数	描述	备注	示例含义
+0x1c	8	Magic Number	0x64,0x65,0x78,0x0a,
+（’d’,’e’,’x’,’/’,’0’,’3’,’7’,0）	 
+0x24	4	checksum	 	 
+0x28	20	SHA-1 签名	 	 
+0x3c	4	Dex文件长度	bc f0 06 00	加上0x1c的偏移，该dex在00 06 f0 d7结束
+0x40	4	dex文件头大小	035到037版本都是70	Dex文件头在0x8b处结束
+0x44	4	Endian	78 56 34 12	表示小头字节序
+0x48	4	Link size	0	0表示无动态链接
+0x4c	4	Link off	0	 
+0x50	4	Map off	00 06 ef e0	 
+
+**/
+
 namespace art {
 
 class DexFile;
