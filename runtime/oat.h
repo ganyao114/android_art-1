@@ -191,6 +191,7 @@ class PACKED(4) OatHeader {
 // save even one OatMethodOffsets struct, the more complicated encoding
 // using a bitmap pays for itself since few classes will have 160
 // methods.
+//编译类型
 enum OatClassType {
   kOatClassAllCompiled = 0,   // OatClass is followed by an OatMethodOffsets for each method.
   kOatClassSomeCompiled = 1,  // A bitmap of which OatMethodOffsets are present follows the OatClass.

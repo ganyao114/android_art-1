@@ -879,7 +879,7 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
         ? reinterpret_cast<const DexLayoutSections*>(Begin() + dex_layout_sections_offset)
         : nullptr;
 
-    //bss 段中的方法
+    //bss 段中的方法.type.text
     const IndexBssMapping* method_bss_mapping;
     const IndexBssMapping* type_bss_mapping;
     const IndexBssMapping* string_bss_mapping;
@@ -902,6 +902,7 @@ bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* e
         DexFileLoader::GetDexCanonicalLocation(dex_file_location.c_str());
 
     // Create the OatDexFile and add it to the owning container.
+    //开始解析 OAT File *
     OatDexFile* oat_dex_file = new OatDexFile(this,
                                               dex_file_location,
                                               canonical_location,
@@ -1776,6 +1777,7 @@ OatFile::OatDexFile::OatDexFile(const OatFile* oat_file,
       string_bss_mapping_(string_bss_mapping_data),
       oat_class_offsets_pointer_(oat_class_offsets_pointer),
       dex_layout_sections_(dex_layout_sections) {
+        //仅仅保存各种传进来的映射信息
   // Initialize TypeLookupTable.
   if (lookup_table_data_ != nullptr) {
     // Peek the number of classes from the DexFile.
@@ -1823,11 +1825,15 @@ uint32_t OatFile::OatDexFile::GetOatClassOffset(uint16_t class_def_index) const 
 }
 
 OatFile::OatClass OatFile::OatDexFile::GetOatClass(uint16_t class_def_index) const {
+
+  //类的 index -> 类在 OAT 中的偏移
   uint32_t oat_class_offset = GetOatClassOffset(class_def_index);
 
+  //Class 起始地址
   const uint8_t* oat_class_pointer = oat_file_->Begin() + oat_class_offset;
   CHECK_LT(oat_class_pointer, oat_file_->End()) << oat_file_->GetLocation();
 
+  //检查状态必须是未初始化的
   const uint8_t* status_pointer = oat_class_pointer;
   CHECK_LT(status_pointer, oat_file_->End()) << oat_file_->GetLocation();
   ClassStatus status = enum_cast<ClassStatus>(*reinterpret_cast<const int16_t*>(status_pointer));
@@ -1841,6 +1847,7 @@ OatFile::OatClass OatFile::OatDexFile::GetOatClass(uint16_t class_def_index) con
   const uint8_t* after_type_pointer = type_pointer + sizeof(int16_t);
   CHECK_LE(after_type_pointer, oat_file_->End()) << oat_file_->GetLocation();
 
+  //OAT 方法区地址
   uint32_t bitmap_size = 0;
   const uint8_t* bitmap_pointer = nullptr;
   const uint8_t* methods_pointer = nullptr;
@@ -1856,6 +1863,7 @@ OatFile::OatClass OatFile::OatDexFile::GetOatClass(uint16_t class_def_index) con
     CHECK_LE(methods_pointer, oat_file_->End()) << oat_file_->GetLocation();
   }
 
+  //将地址传入 OatClass 备用 * -》GetOatMethod
   return OatFile::OatClass(oat_file_,
                            status,
                            type,
@@ -1988,7 +1996,9 @@ const OatMethodOffsets* OatFile::OatClass::GetOatMethodOffsets(uint32_t method_i
 }
 
 const OatFile::OatMethod OatFile::OatClass::GetOatMethod(uint32_t method_index) const {
+  //方法 index -> 方法偏移量
   const OatMethodOffsets* oat_method_offsets = GetOatMethodOffsets(method_index);
+  //直接传入 OatMethod 备用 
   if (oat_method_offsets == nullptr) {
     return OatMethod(nullptr, 0);
   }
@@ -2028,6 +2038,7 @@ const char* OatFile::GetCompilationReason() const {
   return GetOatHeader().GetStoreValueByKey(OatHeader::kCompilationReasonKey);
 }
 
+//从 OAT Dex 中搜索 Class
 OatFile::OatClass OatFile::FindOatClass(const DexFile& dex_file,
                                         uint16_t class_def_idx,
                                         bool* found) {

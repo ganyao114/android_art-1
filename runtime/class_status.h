@@ -71,6 +71,7 @@ namespace art {
 // again at runtime.
 //
 // TODO: Explain the other states
+//OAT 中 Class 的状态
 enum class ClassStatus : uint8_t {
   kNotReady = 0,  // Zero-initialized Class object starts in this state.
   kRetired = 1,  // Retired, should not be used. Use the newly cloned one instead.
