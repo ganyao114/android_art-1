@@ -288,6 +288,7 @@ std::string GetVdexFilename(const std::string& oat_location) {
   return ReplaceFileExtension(oat_location, "vdex");
 }
 
+//插入对应 CPU 架构的子文件夹
 static void InsertIsaDirectory(const InstructionSet isa, std::string* filename) {
   // in = /foo/bar/baz
   // out = /foo/bar/<isa>/baz
@@ -297,10 +298,12 @@ static void InsertIsaDirectory(const InstructionSet isa, std::string* filename) 
   filename->insert(pos + 1, GetInstructionSetString(isa));
 }
 
+//获取对应架构的 boot.art path
 std::string GetSystemImageFilename(const char* location, const InstructionSet isa) {
   // location = /system/framework/boot.art
   // filename = /system/framework/<isa>/boot.art
   std::string filename(location);
+  //插入对应子目录 *
   InsertIsaDirectory(isa, &filename);
   return filename;
 }

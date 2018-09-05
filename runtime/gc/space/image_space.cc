@@ -157,6 +157,7 @@ static bool GenerateImage(const std::string& image_filename,
   return Exec(arg_vector, error_msg);
 }
 
+//查找 Image
 static bool FindImageFilenameImpl(const char* image_location,
                                   const InstructionSet image_isa,
                                   bool* has_system,
@@ -172,6 +173,7 @@ static bool FindImageFilenameImpl(const char* image_location,
   *has_cache = false;
   // image_location = /system/framework/boot.art
   // system_image_location = /system/framework/<image_isa>/boot.art
+  // boot.art 的位置 = /system/framework/<cpu 架构>/boot.art
   std::string system_image_filename(GetSystemImageFilename(image_location, image_isa));
   if (OS::FileExists(system_image_filename.c_str())) {
     *system_filename = system_image_filename;
@@ -231,6 +233,7 @@ static bool ReadSpecificImageHeader(const char* filename, ImageHeader* image_hea
     if (image_file.get() == nullptr) {
       return false;
     }
+    //将头全部读取到内存中
     const bool success = image_file->ReadFully(image_header, sizeof(ImageHeader));
     if (!success || !image_header->IsValid()) {
       return false;
@@ -307,6 +310,7 @@ static bool VerifyImage(const char* image_location,
   return Exec(argv, error_msg);
 }
 
+//读 image 头
 static ImageHeader* ReadSpecificImageHeader(const char* filename, std::string* error_msg) {
   std::unique_ptr<ImageHeader> hdr(new ImageHeader);
   if (!ReadSpecificImageHeader(filename, hdr.get())) {
@@ -316,6 +320,7 @@ static ImageHeader* ReadSpecificImageHeader(const char* filename, std::string* e
   return hdr.release();
 }
 
+//读文件头
 ImageHeader* ImageSpace::ReadImageHeader(const char* image_location,
                                          const InstructionSet image_isa,
                                          std::string* error_msg) {
@@ -325,12 +330,16 @@ ImageHeader* ImageSpace::ReadImageHeader(const char* image_location,
   bool has_cache = false;
   bool dalvik_cache_exists = false;
   bool is_global_cache = false;
+  //找到 boot.art 位置
   if (FindImageFilename(image_location, image_isa, &system_filename, &has_system,
                         &cache_filename, &dalvik_cache_exists, &has_cache, &is_global_cache)) {
+    //可迁移？                      
     if (Runtime::Current()->ShouldRelocate()) {
       if (has_system && has_cache) {
+
         std::unique_ptr<ImageHeader> sys_hdr(new ImageHeader);
         std::unique_ptr<ImageHeader> cache_hdr(new ImageHeader);
+        //读文件头
         if (!ReadSpecificImageHeader(system_filename.c_str(), sys_hdr.get())) {
           *error_msg = StringPrintf("Unable to read image header for %s at %s",
                                     image_location, system_filename.c_str());
@@ -341,6 +350,7 @@ ImageHeader* ImageSpace::ReadImageHeader(const char* image_location,
                                     image_location, cache_filename.c_str());
           return nullptr;
         }
+        //check sum
         if (sys_hdr->GetOatChecksum() != cache_hdr->GetOatChecksum()) {
           *error_msg = StringPrintf("Unable to find a relocated version of image file %s",
                                     image_location);
@@ -527,6 +537,7 @@ class ImageSpaceLoader {
     // ScopedFlock::GetFile to Init the image file. We want the file
     // descriptor (and the associated exclusive lock) to be released when
     // we leave Create.
+    //先打开文件并锁定
     ScopedFlock image = LockedFile::Open(image_filename.c_str(),
                                          rw_lock ? (O_CREAT | O_RDWR) : O_RDONLY /* flags */,
                                          true /* block */,
@@ -540,6 +551,7 @@ class ImageSpaceLoader {
     // make sure that host tests continue to work.
     // Since we are the boot image, pass null since we load the oat file from the boot image oat
     // file name.
+    //开始解析文件 *
     return Init(image_filename.c_str(),
                 image_location,
                 validate_oat_file,
@@ -547,6 +559,7 @@ class ImageSpaceLoader {
                 error_msg);
   }
 
+  //解析 Image
   static std::unique_ptr<ImageSpace> Init(const char* image_filename,
                                           const char* image_location,
                                           bool validate_oat_file,
@@ -562,16 +575,24 @@ class ImageSpaceLoader {
     std::unique_ptr<File> file;
     {
       TimingLogger::ScopedTiming timing("OpenImageFile", &logger);
+
+      //只读方式打开文件
       file.reset(OS::OpenFileForReading(image_filename));
       if (file == nullptr) {
         *error_msg = StringPrintf("Failed to open '%s'", image_filename);
         return nullptr;
       }
     }
+
+    //Image Header 结构* 
     ImageHeader temp_image_header;
     ImageHeader* image_header = &temp_image_header;
+
+    //类似的执行块是为了方便统计函数的执行时间，配合 TimingLogger::ScopedTiming
+    //ScopedTiming 构造函数记录开始时间，析构函数结束
     {
       TimingLogger::ScopedTiming timing("ReadImageHeader", &logger);
+      //读取整个 Image 头
       bool success = file->ReadFully(image_header, sizeof(*image_header));
       if (!success || !image_header->IsValid()) {
         *error_msg = StringPrintf("Invalid image header in '%s'", image_filename);
@@ -587,6 +608,7 @@ class ImageSpaceLoader {
       return nullptr;
     }
 
+    //如果有 OAT 文件，校验和
     if (oat_file != nullptr) {
       // If we have an oat file, check the oat file checksum. The oat file is only non-null for the
       // app image case. Otherwise, we open the oat file after the image and check the checksum there.
@@ -625,6 +647,7 @@ class ImageSpaceLoader {
       return nullptr;
     }
 
+    //开始内存映射
     std::unique_ptr<MemMap> map;
 
     // GetImageBegin is the preferred address to map the image. If we manage to map the
@@ -656,6 +679,7 @@ class ImageSpaceLoader {
     }
     DCHECK_EQ(0, memcmp(image_header, map->Begin(), sizeof(ImageHeader)));
 
+    //将 Image 文件映射到内存中
     std::unique_ptr<MemMap> image_bitmap_map(MemMap::MapFileAtAddress(nullptr,
                                                                       bitmap_section.Size(),
                                                                       PROT_READ, MAP_PRIVATE,
@@ -671,12 +695,14 @@ class ImageSpaceLoader {
     }
     // Loaded the map, use the image header from the file now in case we patch it with
     // RelocateInPlace.
+    //Image 内存 Map 的开始就是 Image Header
     image_header = reinterpret_cast<ImageHeader*>(map->Begin());
     const uint32_t bitmap_index = ImageSpace::bitmap_index_.FetchAndAddSequentiallyConsistent(1);
     std::string bitmap_name(StringPrintf("imagespace %s live-bitmap %u",
                                          image_filename,
                                          bitmap_index));
     // Bitmap only needs to cover until the end of the mirror objects section.
+    //获得 ELF 段
     const ImageSection& image_objects = image_header->GetObjectsSection();
     // We only want the mirror object, not the ArtFields and ArtMethods.
     uint8_t* const image_end = map->Begin() + image_objects.End();
@@ -695,6 +721,7 @@ class ImageSpaceLoader {
         return nullptr;
       }
     }
+    //大概是重对其操作
     {
       TimingLogger::ScopedTiming timing("RelocateImage", &logger);
       if (!RelocateInPlace(*image_header,
@@ -719,6 +746,7 @@ class ImageSpaceLoader {
     // set yet at this point.
     if (oat_file == nullptr) {
       TimingLogger::ScopedTiming timing("OpenOatFile", &logger);
+      //打开 OAT 文件
       space->oat_file_ = OpenOatFile(*space, image_filename, error_msg);
       if (space->oat_file_ == nullptr) {
         DCHECK(!error_msg->empty());
@@ -1505,8 +1533,10 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
   // Step 0: Extra zygote work.
 
   // Step 0.a: If we're the zygote, mark boot.
+  //Step 0:标记 zygote 已经启动
   const bool is_zygote = Runtime::Current()->IsZygote();
   if (is_zygote && !secondary_image && CanWriteToDalvikCache(image_isa)) {
+    // 使用文件标记 *
     MarkZygoteStart(image_isa, Runtime::Current()->GetZygoteMaxFailedBoots());
   }
 
@@ -1524,7 +1554,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
   bool is_global_cache = true;
   std::string dalvik_cache;
 
-  //生成 boot image 的路径，不止有 boot.art 
+  //生成 boot image 的路径，找到对应架构的 boot 文件 和 dalvik cache
   bool found_image = FindImageFilenameImpl(image_location,
                                            image_isa,
                                            &has_system,
@@ -1537,19 +1567,23 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
 
   bool dex2oat_enabled = Runtime::Current()->IsImageDex2OatEnabled();
 
+  //是 zygote 进程
   if (is_zygote && dalvik_cache_exists && !secondary_image) {
     // Extra checks for the zygote. These only apply when loading the first image, explained below.
     DCHECK(!dalvik_cache.empty());
     std::string local_error_msg;
     // All secondary images are verified when the primary image is verified.
+    //验证 image
     bool verified = VerifyImage(image_location, dalvik_cache.c_str(), image_isa, &local_error_msg);
     // If we prune for space at a secondary image, we may end up in a crash loop with the _exit
     // path.
+    //检查空间
     bool check_space = CheckSpace(dalvik_cache, &local_error_msg);
     if (!verified || !check_space) {
       // Note: it is important to only prune for space on the primary image, or we will hit the
       //       restart path.
       LOG(WARNING) << local_error_msg << " Preemptively pruning the dalvik cache.";
+      //条件不符合则则删除缩减 Cache
       PruneDalvikCache(image_isa);
 
       // Re-evaluate the image.
@@ -1582,6 +1616,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
     //检查 sum
     if (ChecksumsMatch(system_filename.c_str(), cache_filename.c_str(), &local_error_msg)) {
       std::unique_ptr<ImageSpace> relocated_space =
+          //Step 1. 加载被迁移的 Image *
           ImageSpaceLoader::Load(image_location,
                                  cache_filename,
                                  is_zygote,
@@ -1599,6 +1634,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
   if (found_image && !has_system && has_cache) {
     std::string local_error_msg;
     std::unique_ptr<ImageSpace> cache_space =
+        //Step 1. 加载 Cache 的 Image *
         ImageSpaceLoader::Load(image_location,
                                cache_filename,
                                is_zygote,
@@ -1619,6 +1655,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
   if (found_image && has_system && !relocate) {
     std::string local_error_msg;
     std::unique_ptr<ImageSpace> system_space =
+        //Step 2. 加载系统 Image *
         ImageSpaceLoader::Load(image_location,
                                system_filename,
                                is_zygote,
@@ -1633,6 +1670,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
 
   // Step 2.b: We require a relocated image. Then we must patch it. This step fails if this is a
   //           secondary image.
+  // Step 2.Image 需要打补丁
   if (found_image && has_system && relocate) {
     std::string local_error_msg;
     if (!dex2oat_enabled) {
@@ -1665,6 +1703,7 @@ std::unique_ptr<ImageSpace> ImageSpace::CreateBootImage(const char* image_locati
 
   // Step 3: We do not have an existing image in /system, so generate an image into the dalvik
   //         cache. This step fails if this is a secondary image.
+  // Step 3.如果系统中还没生成 Image
   if (!has_system) {
     std::string local_error_msg;
     if (!dex2oat_enabled) {
@@ -1732,6 +1771,7 @@ bool ImageSpace::LoadBootImage(const std::string& image_file_name,
   for (size_t index = 0; index < image_file_names.size(); ++index) {
     std::string& image_name = image_file_names[index];
     std::string error_msg;
+    //创建 Image *
     std::unique_ptr<space::ImageSpace> boot_image_space_uptr = CreateBootImage(
         image_name.c_str(),
         image_instruction_set,

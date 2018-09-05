@@ -107,6 +107,7 @@ static void PruneDalvikCache(InstructionSet isa) {
 // every zygote boot and delete it when the boot completes. If we find a file already
 // present, it usually means the boot didn't complete. We wipe the entire dalvik
 // cache if that's the case.
+// 使用文件作为标志符号标记当前 CPU 架构的 zygote 已经启动
 static void MarkZygoteStart(const InstructionSet isa, const uint32_t max_failed_boots) {
   const std::string isa_subdir = GetDalvikCache(GetInstructionSetString(isa));
   CHECK(!isa_subdir.empty()) << "Dalvik cache not found";
@@ -116,6 +117,8 @@ static void MarkZygoteStart(const InstructionSet isa, const uint32_t max_failed_
   uint32_t num_failed_boots = 0;
   std::unique_ptr<File> file(OS::OpenFileReadWrite(file_name));
   if (file.get() == nullptr) {
+
+    //创建一个空文件作为标记
     file.reset(OS::CreateEmptyFile(file_name));
 
     if (file.get() == nullptr) {

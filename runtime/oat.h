@@ -132,32 +132,44 @@ class PACKED(4) OatHeader {
 
   void Flatten(const SafeMap<std::string, std::string>* variable_data);
 
+  //标志OAT文件的一个魔数，等于‘oat\n’
   uint8_t magic_[4];
+  //OAT文件版本号
   uint8_t version_[4];
+  //OAT头部检验和
   uint32_t adler32_checksum_;
-
+  //本地机指令集，为  kArm(1)、kThumb2(2)、kX86(3)和kMips(4) 等
   InstructionSet instruction_set_;
   uint32_t instruction_set_features_bitmap_;
+  //OAT文件包含的DEX文件个数
   uint32_t dex_file_count_;
+  //oatexec段开始位置与oatdata段开始位置的偏移值
   uint32_t oat_dex_files_offset_;
   uint32_t executable_offset_;
+  //ART运行时在启动的时候，可以通过-Xint选项指定所有类的方法都是解释执行的，这与传统的虚拟机使用解释器来执行类方法差不多。同时，有些类方法可能没有被翻译成本地机器指令，这时候也要求对它们进行解释执行。这意味着解释执行的类方法在执行的过程中，可能会调用到另外一个也是解释执行的类方法，也可能调用到另外一个按本地机器指令执行的类方法中。OAT文件在内部提供有两段trampoline代码，分别用来从解释器调用另外一个也是通过解释器来执行的类方法和从解释器调用另外一个按照本地机器执行的类方法。这两段trampoline代码的偏移位置就保存在成员变量 interpreter_to_interpreter_bridge_offset_和interpreter_to_compiled_code_bridge_offset_。
   uint32_t interpreter_to_interpreter_bridge_offset_;
   uint32_t interpreter_to_compiled_code_bridge_offset_;
+  //类方法在执行的过程中，如果要调用另外一个方法是一个JNI函数，那么就要通过存在放置jni_dlsym_lookup_offset_的一段trampoline代码来调用
   uint32_t jni_dlsym_lookup_offset_;
+  //quick oat 方法 ->(箭头表示调用跳转) jni 方法的 trampoline 代码的偏移位置
   uint32_t quick_generic_jni_trampoline_offset_;
+  //quick oat 方法 -> imt 方法的 trampoline 代码的偏移位置
   uint32_t quick_imt_conflict_trampoline_offset_;
+  //quick oat 方法 -> 静态类方法的 trampoline 代码的偏移位置,静态类中方法是延迟 resolve 的，需要在调用的时候初始化静态类，就是 resolve 的过程
   uint32_t quick_resolution_trampoline_offset_;
+  //quick oat 方法 -> 解释执行的方法的 trampoline 代码的偏移位置
   uint32_t quick_to_interpreter_bridge_offset_;
 
   // The amount that the image this oat is associated with has been patched.
   int32_t image_patch_delta_;
-
+  //用来创建Image空间的OAT文件的检验和
   uint32_t image_file_location_oat_checksum_;
+  //用来创建Image空间的OAT文件的oatdata段在内存的位置。
   uint32_t image_file_location_oat_data_begin_;
 
   uint32_t key_value_store_size_;
   uint8_t key_value_store_[0];  // note variable width data at end
-
+  //结束并且对齐
   DISALLOW_COPY_AND_ASSIGN(OatHeader);
 };
 
