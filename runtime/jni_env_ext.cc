@@ -82,6 +82,7 @@ JNIEnvExt::JNIEnvExt(Thread* self_in, JavaVMExt* vm_in, std::string* error_msg)
       runtime_deleted_(false) {
   MutexLock mu(Thread::Current(), *Locks::jni_function_table_lock_);
   check_jni_ = vm_in->IsCheckJniEnabled();
+  //获取 jni 函数表，这里保存了虚拟机刚启动默认加载的函数表 *
   functions = GetFunctionTable(check_jni_);
   unchecked_functions_ = GetJniNativeInterface();
 }
@@ -311,10 +312,12 @@ void JNIEnvExt::SetTableOverride(const JNINativeInterface* table_override) {
 }
 
 const JNINativeInterface* JNIEnvExt::GetFunctionTable(bool check_jni) {
+  //如果被复写了，调用复写的
   const JNINativeInterface* override = JNIEnvExt::table_override_;
   if (override != nullptr) {
     return override;
   }
+  //JNI 接口表
   return check_jni ? GetCheckJniNativeInterface() : GetJniNativeInterface();
 }
 

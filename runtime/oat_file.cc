@@ -550,6 +550,13 @@ static void DCheckIndexToBssMapping(OatFile* oat_file,
 }
 
 //解析 OAT， 注意这是 dlopen 对应的实现，还有 elfopen 对应的实现
+/**
+ * 实际上还没有真正解析
+ * 主要任务就是算出各个段在 OAT 内存映射中的地址，并且顺便检查一下
+ * 然后传入 OatDexFile 备用
+ * 后面 OatClass，OatMethod 也是类似情况
+ * 直到最后从 OatMethod 中取出一行行 native 代码的地址
+ **/
 bool OatFileBase::Setup(int zip_fd, const char* abs_dex_location, std::string* error_msg) {
 
   //OAT 头 *

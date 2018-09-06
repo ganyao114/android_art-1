@@ -24,11 +24,26 @@
 #include "indirect_reference_table.h"
 #include "obj_ptr.h"
 #include "reference_table.h"
-
+/** OAT 加载成功之后：
+  jclass startClass = env->FindClass(slashClassName);    
+    if (startClass == NULL) {    
+        ALOGE("JavaVM unable to locate class '%s'\n", slashClassName);    
+    } else {    
+        jmethodID startMeth = env->GetStaticMethodID(startClass, "main",    
+                                                 "([Ljava/lang/String;)V");    
+        if (startMeth == NULL) {    
+            ALOGE("JavaVM unable to find main() in '%s'\n", className);     
+        } else {    
+            env->CallStaticVoidMethod(startClass, startMeth, strArray);    
+            ......    
+        }    
+    }
+ * */
 namespace art {
 
 class JavaVMExt;
 
+//mirro 是 java 世界在 native 世界的镜像
 namespace mirror {
 class Object;
 }  // namespace mirror

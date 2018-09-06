@@ -456,13 +456,21 @@ class JNI {
     return nullptr;
   }
 
+  //搜索 Class
   static jclass FindClass(JNIEnv* env, const char* name) {
     CHECK_NON_NULL_ARGUMENT(name);
     Runtime* runtime = Runtime::Current();
+    //ClassLinker对象是在创建ART虚拟机的过程中创建的，用来加载类以及链接类方法
     ClassLinker* class_linker = runtime->GetClassLinker();
     std::string descriptor(NormalizeJniClassDescriptor(name));
     ScopedObjectAccess soa(env);
     mirror::Class* c = nullptr;
+    //使用当前 ClasLoader load class
+    /**
+     *   JNI类的静态成员函数FindClass首先是判断ART运行时是否已经启动起来。如果已经启动，那么就通过调用函数GetClassLoader来获得当前线程所关联的ClassLoader，
+     * 并且以此为参数，调用前面获得的ClassLinker对象的成员函数FindClass来加载由参数name指定的类。一般来说，当前线程所关联的ClassLoader就是当前正在执行的类方法所关联的ClassLoader，即用来加载当前正在执行的类的ClassLoader。
+     * 如果ART虚拟机还没有开始执行类方法，就像我们现在这个场景，那么当前线程所关联的ClassLoader实际上就系统类加载器，即SystemClassLoader
+    **/
     if (runtime->IsStarted()) {
       StackHandleScope<1> hs(soa.Self());
       Handle<mirror::ClassLoader> class_loader(hs.NewHandle(GetClassLoader(soa)));
@@ -2685,6 +2693,7 @@ class JNI {
   }
 };
 
+//JNI 接口表
 const JNINativeInterface gJniNativeInterface = {
   nullptr,  // reserved0.
   nullptr,  // reserved1.

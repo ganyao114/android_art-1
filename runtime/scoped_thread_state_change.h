@@ -142,6 +142,8 @@ class ScopedObjectAccessAlreadyRunnable : public ValueObject {
 //
 // For annotalysis the subclass ScopedObjectAccess (below) makes it explicit that a shared of
 // the mutator_lock_ will be acquired on construction.
+//大概意思是可以分摊当前线程的压力
+//检查和修复在错误的线程上使用 JNIEnv，并且将 Objects 转换成 JObjects，防止对象被 GC/VM/本地代码 修改
 class ScopedObjectAccessUnchecked : public ScopedObjectAccessAlreadyRunnable {
  public:
   ALWAYS_INLINE explicit ScopedObjectAccessUnchecked(JNIEnv* env)

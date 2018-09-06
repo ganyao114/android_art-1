@@ -37,6 +37,8 @@ template<class T> class Handle;
 // GC visible then the GC may move the references within them, something that couldn't be done with
 // a wrap pointer. Handles are generally allocated within HandleScopes. Handle is a super-class
 // of MutableHandle and doesn't support assignment operations.
+
+//用来储存属于 GC Root 的对象
 template<class T>
 class Handle : public ValueObject {
  public:

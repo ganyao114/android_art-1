@@ -40,6 +40,7 @@ class Object;
 }  // namespace mirror
 
 // Basic handle scope, tracked by a list. May be variable sized.
+//标记 GCRoot ？
 class PACKED(4) BaseHandleScope {
  public:
   bool IsVariableSized() const {

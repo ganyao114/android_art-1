@@ -2292,6 +2292,7 @@ mirror::ObjectArray<mirror::StackTraceElement>* ClassLinker::AllocStackTraceElem
       self, GetClassRoot(kJavaLangStackTraceElementArrayClass), length);
 }
 
+//检查并确保返回的 Class 已经 Resolved
 mirror::Class* ClassLinker::EnsureResolved(Thread* self,
                                            const char* descriptor,
                                            ObjPtr<mirror::Class> klass) {
@@ -2313,6 +2314,7 @@ mirror::Class* ClassLinker::EnsureResolved(Thread* self,
     Handle<mirror::Class> h_class(hs.NewHandle(klass));
     ObjectLock<mirror::Class> lock(self, h_class);
     // Loop and wait for the resolving thread to retire this class.
+    //Block 等待 Class Resolve 完毕
     while (!h_class->IsRetired() && !h_class->IsErroneousUnresolved()) {
       lock.WaitIgnoringInterrupts();
     }
@@ -2372,6 +2374,7 @@ mirror::Class* ClassLinker::EnsureResolved(Thread* self,
 typedef std::pair<const DexFile*, const DexFile::ClassDef*> ClassPathEntry;
 
 // Search a collection of DexFiles for a descriptor
+//搜索所有和该类签名相关的 Dex 文件
 ClassPathEntry FindInClassPath(const char* descriptor,
                                size_t hash, const std::vector<const DexFile*>& class_path) {
   for (const DexFile* dex_file : class_path) {
@@ -2502,6 +2505,7 @@ ObjPtr<mirror::Class> ClassLinker::FindClassInBaseDexClassLoaderClassPath(
   return ret;
 }
 
+//开始搜索加载类
 mirror::Class* ClassLinker::FindClass(Thread* self,
                                       const char* descriptor,
                                       Handle<mirror::ClassLoader> class_loader) {
@@ -2514,17 +2518,25 @@ mirror::Class* ClassLinker::FindClass(Thread* self,
     // for primitive classes that aren't backed by dex files.
     return FindPrimitiveClass(descriptor[0]);
   }
+  //hash Class 的签名，以此为 key
   const size_t hash = ComputeModifiedUtf8Hash(descriptor);
   // Find the class in the loaded classes table.
+  //用 hash 后的 key 先去查缓存
   ObjPtr<mirror::Class> klass = LookupClass(self, descriptor, hash, class_loader.Get());
+  //如果已经加载过了，返回并确定 Class 已经 Resolved *
   if (klass != nullptr) {
     return EnsureResolved(self, descriptor, klass);
   }
   // Class is not yet loaded.
+  //Class 尚未加载，现在开始加载流程
+  //首先，如果这不是一个数组类型并且 classloader 为空，那么就需要调用DexFile类的静态FindInClassPath来在系统启动类路径寻找对应的类。
+  //一旦寻找到，那么就会获得包含目标类的DEX文件，因此接下来就调用ClassLinker类的另外一个成员函数DefineClass从获得的DEX文件中加载参数descriptor指定的类了
   if (descriptor[0] != '[' && class_loader == nullptr) {
     // Non-array class and the boot class loader, search the boot class path.
+    //先找到类所在的 Dex 文件 *
     ClassPathEntry pair = FindInClassPath(descriptor, hash, boot_class_path_);
     if (pair.second != nullptr) {
+      //解析加载类 *
       return DefineClass(self,
                          descriptor,
                          hash,
@@ -2543,12 +2555,21 @@ mirror::Class* ClassLinker::FindClass(Thread* self,
   }
   ObjPtr<mirror::Class> result_ptr;
   bool descriptor_equals;
+
+  /**
+   * 如果参数class_loader的值不等于NULL，也就是说ClassLinker类的成员函数FindClass的调用者指定了类加载器，那么就通过该类加载器来加载参数descriptor指定的类。
+   * 每一个类加载器在Java层都对应有一个java.lang.ClassLoader对象。通过调用这个java.lang.ClassLoader类的成员函数loadClass即可加载指定的类。
+   * 在我们这个场景中，上述的java.lang.ClassLoader类是一个系统类加载器，它负责加载系统类。而我们当前要加载的类为com.android.internal.os.ZygoteInit，它属于一个系统类。
+   **/
+  //如果是一个数组类型
   if (descriptor[0] == '[') {
+    //数组类型是运行时期生成的，这个以前应该都有了解 *
     result_ptr = CreateArrayClass(self, descriptor, hash, class_loader);
     DCHECK_EQ(result_ptr == nullptr, self->IsExceptionPending());
     DCHECK(result_ptr == nullptr || result_ptr->DescriptorEquals(descriptor));
     descriptor_equals = true;
   } else {
+    //普通类型
     ScopedObjectAccessUnchecked soa(self);
     bool known_hierarchy =
         FindClassInBaseDexClassLoader(soa, self, descriptor, hash, class_loader, &result_ptr);
@@ -2673,6 +2694,7 @@ mirror::Class* ClassLinker::FindClass(Thread* self,
   return result_ptr.Ptr();
 }
 
+//从 Dex 加载类
 mirror::Class* ClassLinker::DefineClass(Thread* self,
                                         const char* descriptor,
                                         size_t hash,
@@ -2683,6 +2705,7 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
   auto klass = hs.NewHandle<mirror::Class>(nullptr);
 
   // Load the class from the dex file.
+  //如果 ClassLinker 未初始化完成，以下基础类型应该已经正在加载了，那么就将本地变量klass指向它们，等待初始化完成就加载好了
   if (UNLIKELY(!init_done_)) {
     // finish up init of hand crafted class_roots_
     if (strcmp(descriptor, "Ljava/lang/Object;") == 0) {
@@ -2700,6 +2723,7 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
     }
   }
 
+  //先分配内存空间
   if (klass == nullptr) {
     // Allocate a class with the status of not ready.
     // Interface object should get the right size here. Regular class will
@@ -2707,6 +2731,8 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
     // size when the class becomes resolved.
     klass.Assign(AllocClass(self, SizeOfClassWithoutEmbeddedTables(dex_file, dex_class_def)));
   }
+
+  //没有分配成功，说明内存不足了，抛出 OOM 异常
   if (UNLIKELY(klass == nullptr)) {
     self->AssertPendingOOMException();
     return nullptr;
@@ -2717,6 +2743,8 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
   DexFile::ClassDef const* new_class_def = nullptr;
   // TODO We should ideally figure out some way to move this after we get a lock on the klass so it
   // will only be called once.
+
+  //获取真正的 Dex 文件，大概是处理一堆重定向 Dex 文件的 Hook *
   Runtime::Current()->GetRuntimeCallbacks()->ClassPreDefine(descriptor,
                                                             klass,
                                                             class_loader,
@@ -2728,6 +2756,8 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
   if (self->IsExceptionPending()) {
     return nullptr;
   }
+
+  //写入并返回 Dex Cache
   ObjPtr<mirror::DexCache> dex_cache = RegisterDexFile(*new_dex_file, class_loader.Get());
   if (dex_cache == nullptr) {
     self->AssertPendingException();
@@ -3495,6 +3525,7 @@ void ClassLinker::RegisterExistingDexCache(ObjPtr<mirror::DexCache> dex_cache,
   }
 }
 
+//先找有没有现成的 Cache，有就读取返回，没有就保存新的 Cache
 ObjPtr<mirror::DexCache> ClassLinker::RegisterDexFile(const DexFile& dex_file,
                                                       ObjPtr<mirror::ClassLoader> class_loader) {
   Thread* self = Thread::Current();
@@ -3657,11 +3688,14 @@ mirror::Class* ClassLinker::InitializePrimitiveClass(ObjPtr<mirror::Class> primi
 // array class; that always comes from the base element class.
 //
 // Returns null with an exception raised on failure.
+//创建数组类型
 mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descriptor, size_t hash,
                                              Handle<mirror::ClassLoader> class_loader) {
   // Identify the underlying component type
   CHECK_EQ('[', descriptor[0]);
   StackHandleScope<2> hs(self);
+
+  //先加载元素类型
   MutableHandle<mirror::Class> component_type(hs.NewHandle(FindClass(self, descriptor + 1,
                                                                      class_loader)));
   if (component_type == nullptr) {
@@ -3697,6 +3731,9 @@ mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descripto
   // because we effectively do this lookup again when we add the new
   // class to the hash table --- necessary because of possible races with
   // other threads.)
+
+  //数组类型的 ClassLoader 和元素类型的保持一致
+  //先去缓存看一下，有就直接返回
   if (class_loader.Get() != component_type->GetClassLoader()) {
     ObjPtr<mirror::Class> new_class =
         LookupClass(self, descriptor, hash, component_type->GetClassLoader());
@@ -3713,7 +3750,12 @@ mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descripto
   //
   // Array classes are simple enough that we don't need to do a full
   // link step.
+
+  //这里 new 一个 Class Mirro(Class native 层的分身)，但是包裹在 Handle 中，用于标记 GC Root
   auto new_class = hs.NewHandle<mirror::Class>(nullptr);
+
+  //如果 ClassLinker 未初始化完成，以下基础类型应该已经正在加载了，那么就将本地变量klass指向它们，等待初始化完成就加载好了
+  //基础数组类型编译器会在编译期间自动生成的
   if (UNLIKELY(!init_done_)) {
     // Classes that were hand created, ie not by FindSystemClass
     if (strcmp(descriptor, "[Ljava/lang/Class;") == 0) {
@@ -3730,7 +3772,10 @@ mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descripto
       new_class.Assign(GetClassRoot(kLongArrayClass));
     }
   }
+
+  //非基础类型或者非一维数组，运行时生成
   if (new_class == nullptr) {
+    //开辟内存
     new_class.Assign(AllocClass(self, mirror::Array::ClassSize(image_pointer_size_)));
     if (new_class == nullptr) {
       self->AssertPendingOOMException();
@@ -3738,12 +3783,19 @@ mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descripto
     }
     new_class->SetComponentType(component_type.Get());
   }
+  //加锁，防止同时操作新 class
   ObjectLock<mirror::Class> lock(self, new_class);  // Must hold lock on object when initializing.
   DCHECK(new_class->GetComponentType() != nullptr);
+
+  //为新生成的数组类添加各种属性
   ObjPtr<mirror::Class> java_lang_Object = GetClassRoot(kJavaLangObject);
+  //父类 Object
   new_class->SetSuperClass(java_lang_Object);
+  //虚函数表和 Object 一致
   new_class->SetVTable(java_lang_Object->GetVTable());
+  //设置对象类型为引用类型
   new_class->SetPrimitiveType(Primitive::kPrimNot);
+  //Class Loader
   new_class->SetClassLoader(component_type->GetClassLoader());
   if (component_type->IsPrimitive()) {
     new_class->SetClassFlags(mirror::kClassFlagNoReferenceFields);
@@ -3753,6 +3805,7 @@ mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descripto
   mirror::Class::SetStatus(new_class, ClassStatus::kLoaded, self);
   new_class->PopulateEmbeddedVTable(image_pointer_size_);
   ImTable* object_imt = java_lang_Object->GetImt(image_pointer_size_);
+  //设置 Object IMT 表
   new_class->SetImt(object_imt, image_pointer_size_);
   mirror::Class::SetStatus(new_class, ClassStatus::kInitialized, self);
   // don't need to set new_class->SetObjectSize(..)
@@ -3770,12 +3823,16 @@ mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descripto
 
   // Use the single, global copies of "interfaces" and "iftable"
   // (remember not to free them for arrays).
+
+  //设置接口列表，have java/lang/Cloneable & java/io/Serializable
+  //
   {
     ObjPtr<mirror::IfTable> array_iftable = array_iftable_.Read();
     CHECK(array_iftable != nullptr);
     new_class->SetIfTable(array_iftable);
   }
 
+  //数组类型的 AccessFlag 在元素类型的 AccessFlag 基础上加上 abstract 和 final，去除 interface
   // Inherit access flags from the component type.
   int access_flags = new_class->GetComponentType()->GetAccessFlags();
   // Lose any implementation detail flags; in particular, arrays aren't finalizable.
@@ -3792,6 +3849,7 @@ mirror::Class* ClassLinker::CreateArrayClass(Thread* self, const char* descripto
     // We postpone ClassLoad and ClassPrepare events to this point in time to avoid
     // duplicate events in case of races. Array classes don't really follow dedicated
     // load and prepare, anyways.
+    //通知 Runtime class 新的数组类型 load 好了
     Runtime::Current()->GetRuntimeCallbacks()->ClassLoad(new_class);
     Runtime::Current()->GetRuntimeCallbacks()->ClassPrepare(new_class, new_class);
 
