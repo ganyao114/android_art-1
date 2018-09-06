@@ -2757,13 +2757,15 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
     return nullptr;
   }
 
-  //写入并返回 Dex Cache
+  //查找或者写入并返回 Dex Cache *
   ObjPtr<mirror::DexCache> dex_cache = RegisterDexFile(*new_dex_file, class_loader.Get());
   if (dex_cache == nullptr) {
     self->AssertPendingException();
     return nullptr;
   }
   klass->SetDexCache(dex_cache);
+
+  //设置 Class *
   SetupClass(*new_dex_file, *new_class_def, klass, class_loader.Get());
 
   // Mark the string class by setting its access flag.
@@ -2779,7 +2781,10 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
   klass->SetIfTable(GetClassRoot(kJavaLangObject)->GetIfTable());
 
   // Add the newly loaded class to the loaded classes table.
+  //先插入缓存，防止重复加载
   ObjPtr<mirror::Class> existing = InsertClass(descriptor, klass.Get(), hash);
+
+  //如果缓存中已经存在了，说明前面加载过了，就直接返回前面加载过的。
   if (existing != nullptr) {
     // We failed to insert because we raced with another thread. Calling EnsureResolved may cause
     // this thread to block.
@@ -2790,6 +2795,7 @@ mirror::Class* ClassLinker::DefineClass(Thread* self,
   // end up allocating unfree-able linear alloc resources and then lose the race condition. The
   // other reason is that the field roots are only visited from the class table. So we need to be
   // inserted before we allocate / fill in these fields.
+  //真正解析类，加载 Method，Field 这些 *
   LoadClass(self, *new_dex_file, *new_class_def, klass);
   if (self->IsExceptionPending()) {
     VLOG(class_linker) << self->GetException()->Dump();
@@ -3052,17 +3058,24 @@ inline void EnsureThrowsInvocationError(ClassLinker* class_linker, ArtMethod* me
       class_linker->GetImagePointerSize());
 }
 
+//在 OAT 文件中找到方法的本地机器指令
 static void LinkCode(ClassLinker* class_linker,
                      ArtMethod* method,
                      const OatFile::OatClass* oat_class,
                      uint32_t class_def_method_index) REQUIRES_SHARED(Locks::mutator_lock_) {
   Runtime* const runtime = Runtime::Current();
+
+  //如果只是为了 Dex2Oat，没必要走到这一步
   if (runtime->IsAotCompiler()) {
     // The following code only applies to a non-compiler runtime.
     return;
   }
+
   // Method shouldn't have already been linked.
   DCHECK(method->GetEntryPointFromQuickCompiledCode() == nullptr);
+
+  //通过参数class_def_method_index描述的索引号可以在oat_class表示的OatClass结构体中找到一个OatMethod结构体oat_method。
+  //这个OatMethod结构描述了类方法method的本地机器指令相关信息，通过调用它的成员函数LinkMethod可以将这些信息设置到参数method描述的ArtMethod对象中去
   if (oat_class != nullptr) {
     // Every kind of method should at least get an invoke stub from the oat_method.
     // non-abstract methods also get their code pointers.
@@ -3070,8 +3083,10 @@ static void LinkCode(ClassLinker* class_linker,
     oat_method.LinkMethod(method);
   }
 
+  //获取该 OAT 方法 Code 的入口地址，表示该方法已编译成机器码
   // Install entry point from interpreter.
   const void* quick_code = method->GetEntryPointFromQuickCompiledCode();
+  //获取该 Dex 方法 Code 的入口地址，表示该方法尚未编译，需要解释执行
   bool enter_interpreter = class_linker->ShouldUseInterpreterEntrypoint(method, quick_code);
 
   if (!method->IsInvokable()) {
@@ -3079,14 +3094,22 @@ static void LinkCode(ClassLinker* class_linker,
     return;
   }
 
+  //如果是静态方法，并且不是构造函数，则把代码入口设置成一个桩函数的地址
+  //这个函数是通用的，应为所有 static 方法都要在类初始化时候去 resolve。
+  //那么先把这个方法设置成一个通用的跳板，当有其他方法调用到的时候，跳板方法将出发该类的初始化
+  //在该类初始化的时候，这些跳板方法才会被替换成真正的地址 ClassLinker::InitializeClass -> ClassLinker::FixupStaticTrampolines
   if (method->IsStatic() && !method->IsConstructor()) {
     // For static methods excluding the class initializer, install the trampoline.
     // It will be replaced by the proper entry point by ClassLinker::FixupStaticTrampolines
     // after initializing class (see ClassLinker::InitializeClass method).
     method->SetEntryPointFromQuickCompiledCode(GetQuickResolutionStub());
-  } else if (quick_code == nullptr && method->IsNative()) {
+  } 
+  //如果是 JNI 方法，设置成通用的 JNI 函数跳板
+  else if (quick_code == nullptr && method->IsNative()) {
     method->SetEntryPointFromQuickCompiledCode(GetQuickGenericJniStub());
-  } else if (enter_interpreter) {
+  } 
+  //如果方法需要解释执行，则设置成解释执行的跳板
+  else if (enter_interpreter) {
     // Set entry point from compiled code if there's no code or in interpreter only mode.
     method->SetEntryPointFromQuickCompiledCode(GetQuickToInterpreterBridge());
   }
@@ -3136,6 +3159,7 @@ void ClassLinker::LoadClass(Thread* self,
   if (class_data == nullptr) {
     return;  // no fields or methods - for example a marker interface
   }
+  //加载类成员 *
   LoadClassMembers(self, dex_file, class_data, klass);
 }
 
@@ -3182,7 +3206,7 @@ LinearAlloc* ClassLinker::GetAllocatorForClassLoader(ObjPtr<mirror::ClassLoader>
   DCHECK(allocator != nullptr);
   return allocator;
 }
-
+//ClassLoader 一般不会被 GC，所以分配在 LinearAlloc 上
 LinearAlloc* ClassLinker::GetOrCreateAllocatorForClassLoader(ObjPtr<mirror::ClassLoader> class_loader) {
   if (class_loader == nullptr) {
     return Runtime::Current()->GetLinearAlloc();
@@ -3197,6 +3221,13 @@ LinearAlloc* ClassLinker::GetOrCreateAllocatorForClassLoader(ObjPtr<mirror::Clas
   return allocator;
 }
 
+//加载类成员
+/**
+  dex_file: 类型为DexFile，描述要加载的类所在的DEX文件。
+  dex_class_def: 类型为ClassDef，描述要加载的类在DEX文件里面的信息。
+  klass: 类型为Class，描述加载完成的类。
+  class_loader:  类型为ClassLoader，描述所使用的类加载器 
+**/
 void ClassLinker::LoadClassMembers(Thread* self,
                                    const DexFile& dex_file,
                                    const uint8_t* class_data,
@@ -3208,11 +3239,15 @@ void ClassLinker::LoadClassMembers(Thread* self,
     // Load static fields.
     // We allow duplicate definitions of the same field in a class_data_item
     // but ignore the repeated indexes here, b/21868015.
+
+    //在线性内存上先分配静态成员变量的内存空间，这部分不常 GC，大概只有类被 GC 的时候这里才会被释放，所以线性内存较为高效
     LinearAlloc* const allocator = GetAllocatorForClassLoader(klass->GetClassLoader());
     ClassDataItemIterator it(dex_file, class_data);
     LengthPrefixedArray<ArtField>* sfields = AllocArtFieldArray(self,
                                                                 allocator,
                                                                 it.NumStaticFields());
+    
+    //加载静态成员变量
     size_t num_sfields = 0;
     uint32_t last_field_idx = 0u;
     for (; it.HasNextStaticField(); it.Next()) {
@@ -3220,6 +3255,7 @@ void ClassLinker::LoadClassMembers(Thread* self,
       DCHECK_GE(field_idx, last_field_idx);  // Ordering enforced by DexFileVerifier.
       if (num_sfields == 0 || LIKELY(field_idx > last_field_idx)) {
         DCHECK_LT(num_sfields, it.NumStaticFields());
+        //加载静态 Field *
         LoadField(it, klass, &sfields->At(num_sfields));
         ++num_sfields;
         last_field_idx = field_idx;
@@ -3227,6 +3263,7 @@ void ClassLinker::LoadClassMembers(Thread* self,
     }
 
     // Load instance fields.
+    //分配非静态 Field
     LengthPrefixedArray<ArtField>* ifields = AllocArtFieldArray(self,
                                                                 allocator,
                                                                 it.NumInstanceFields());
@@ -3237,12 +3274,14 @@ void ClassLinker::LoadClassMembers(Thread* self,
       DCHECK_GE(field_idx, last_field_idx);  // Ordering enforced by DexFileVerifier.
       if (num_ifields == 0 || LIKELY(field_idx > last_field_idx)) {
         DCHECK_LT(num_ifields, it.NumInstanceFields());
+        //加载非静态 Field *
         LoadField(it, klass, &ifields->At(num_ifields));
         ++num_ifields;
         last_field_idx = field_idx;
       }
     }
 
+    //检查一下大小
     if (UNLIKELY(num_sfields != it.NumStaticFields()) ||
         UNLIKELY(num_ifields != it.NumInstanceFields())) {
       LOG(WARNING) << "Duplicate fields in class " << klass->PrettyDescriptor()
@@ -3256,18 +3295,24 @@ void ClassLinker::LoadClassMembers(Thread* self,
         ifields->SetSize(num_ifields);
       }
     }
+
+    //将加载好的 ArtField 列表塞进去
     // Set the field arrays.
     klass->SetSFieldsPtr(sfields);
     DCHECK_EQ(klass->NumStaticFields(), num_sfields);
     klass->SetIFieldsPtr(ifields);
     DCHECK_EQ(klass->NumInstanceFields(), num_ifields);
     // Load methods.
+
+    //开始加载方法
     bool has_oat_class = false;
     const OatFile::OatClass oat_class =
         (Runtime::Current()->IsStarted() && !Runtime::Current()->IsAotCompiler())
             ? OatFile::FindOatClass(dex_file, klass->GetDexClassDefIndex(), &has_oat_class)
             : OatFile::OatClass::Invalid();
     const OatFile::OatClass* oat_class_ptr = has_oat_class ? &oat_class : nullptr;
+
+    //还是先分配内存，这里 Artmethod 列表的长度是 普通方法 + abstract 方法
     klass->SetMethodsPtr(
         AllocArtMethodArray(self, allocator, it.NumDirectMethods() + it.NumVirtualMethods()),
         it.NumDirectMethods(),
@@ -3276,9 +3321,13 @@ void ClassLinker::LoadClassMembers(Thread* self,
     uint32_t last_dex_method_index = dex::kDexNoIndex;
     size_t last_class_def_method_index = 0;
     // TODO These should really use the iterators.
+
+    //先加载普通方法
     for (size_t i = 0; it.HasNextDirectMethod(); i++, it.Next()) {
       ArtMethod* method = klass->GetDirectMethodUnchecked(i, image_pointer_size_);
+      //加载方法 *
       LoadMethod(dex_file, it, klass, method);
+      //链接 Code *
       LinkCode(this, method, oat_class_ptr, class_def_method_index);
       uint32_t it_method_index = it.GetMemberIndex();
       if (last_dex_method_index == it_method_index) {
@@ -3305,23 +3354,32 @@ void ClassLinker::LoadClassMembers(Thread* self,
   self->AllowThreadSuspension();
 }
 
+//加载 Field，这里只做有限的几个事情
 void ClassLinker::LoadField(const ClassDataItemIterator& it,
                             Handle<mirror::Class> klass,
                             ArtField* dst) {
   const uint32_t field_idx = it.GetMemberIndex();
+
+  //设置在类中 index
   dst->SetDexFieldIndex(field_idx);
+  //设置类
   dst->SetDeclaringClass(klass.Get());
 
   // Get access flags from the DexFile. If this is a boot class path class,
   // also set its runtime hidden API access flags.
+
+  //这就是 Android P 新引入的 API 限制，P 编译期间会读取一个黑名单，黑名单中的 Field，Method 会在编译期间将 access flag 写入到对应的类的 Dex 中
+  //这样 P 的 Art 在运行期间就知道哪些是 Hiden Api 了
   uint32_t access_flags = it.GetFieldAccessFlags();
   if (klass->IsBootStrapClassLoaded()) {
     access_flags =
         HiddenApiAccessFlags::EncodeForRuntime(access_flags, it.DecodeHiddenAccessFlags());
   }
+  //AccessFlag 被存到 ArtField 中
   dst->SetAccessFlags(access_flags);
 }
 
+//加载方法
 void ClassLinker::LoadMethod(const DexFile& dex_file,
                              const ClassDataItemIterator& it,
                              Handle<mirror::Class> klass,
@@ -3331,12 +3389,17 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
   const char* method_name = dex_file.StringDataByIdx(method_id.name_idx_);
 
   ScopedAssertNoThreadSuspension ants("LoadMethod");
+
+  //必要信息的填入
   dst->SetDexMethodIndex(dex_method_idx);
   dst->SetDeclaringClass(klass.Get());
+  //Code 在内存中的偏移
   dst->SetCodeItemOffset(it.GetMethodCodeItemOffset());
 
   // Get access flags from the DexFile. If this is a boot class path class,
   // also set its runtime hidden API access flags.
+
+  //和前面 Field 一样，开始处理 Access Flag
   uint32_t access_flags = it.GetMethodAccessFlags();
 
   if (klass->IsBootStrapClassLoaded()) {
@@ -3344,6 +3407,7 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
         HiddenApiAccessFlags::EncodeForRuntime(access_flags, it.DecodeHiddenAccessFlags());
   }
 
+  //如果该类实现了 finalize 方法，告诉 Class，以便在后面的 GC
   if (UNLIKELY(strcmp("finalize", method_name) == 0)) {
     // Set finalizable flag on declaring class.
     if (strcmp("V", dex_file.GetShorty(method_id.proto_idx_)) == 0) {
@@ -3364,8 +3428,11 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
         }
       }
     }
-  } else if (method_name[0] == '<') {
+  } 
+  //格式为 <。。。> 的函数一般是编译器自动生成的初始化函数
+  else if (method_name[0] == '<') {
     // Fix broken access flags for initializers. Bug 11157540.
+    //如果是无参构造函数，和类初始化函数，则正确，不是则有问题
     bool is_init = (strcmp("<init>", method_name) == 0);
     bool is_clinit = !is_init && (strcmp("<clinit>", method_name) == 0);
     if (UNLIKELY(!is_init && !is_clinit)) {
@@ -3383,6 +3450,7 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
     access_flags |= annotations::GetNativeMethodAnnotationAccessFlags(
         dex_file, dst->GetClassDef(), dex_method_idx);
   }
+  //设置 Access Flag
   dst->SetAccessFlags(access_flags);
 }
 
@@ -3538,6 +3606,7 @@ ObjPtr<mirror::DexCache> ClassLinker::RegisterDexFile(const DexFile& dex_file,
   if (old_dex_cache != nullptr) {
     return EnsureSameClassLoader(self, old_dex_cache, old_data, class_loader);
   }
+  //ClassLoader 一般不会被 GC，所以直接分配到线性内存上
   LinearAlloc* const linear_alloc = GetOrCreateAllocatorForClassLoader(class_loader);
   DCHECK(linear_alloc != nullptr);
   ClassTable* table;

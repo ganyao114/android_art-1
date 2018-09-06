@@ -22,7 +22,7 @@
 namespace art {
 
 class ArenaPool;
-
+//线性内存分配器，只需要线性的分配内存，这部分内存一般不会轻易改变，所有不需要有复杂的碎片处理等操作
 // TODO: Support freeing if we add poor man's class unloading.
 class LinearAlloc {
  public:

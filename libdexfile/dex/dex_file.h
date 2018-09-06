@@ -1277,6 +1277,8 @@ class ClassDataItemIterator {
       return last_idx_ + method_.method_idx_delta_;
     }
   }
+
+  //P 引入的 API 保护措施，以下方法读取 Dex 中的 AccessFlag 信息
   uint32_t GetRawMemberAccessFlags() const {
     if (pos_ < EndOfInstanceFieldsPos()) {
       return field_.access_flags_;
