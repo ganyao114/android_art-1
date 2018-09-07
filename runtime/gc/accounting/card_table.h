@@ -45,6 +45,11 @@ template<size_t kAlignment> class SpaceBitmap;
 // Maintain a card table from the the write barrier. All writes of
 // non-null values to heap addresses should go through an entry in
 // WriteBarrier, and from there to here.
+/**
+ *    Java虚拟机用了一个叫做CardTable(卡表)的数据结构来标记老年代的某一块内存区域中的对象是否持有新生代对象的引用,卡表的数量取决于老年代的大小和每张卡对应的内存大小
+ * ，每张卡在卡表中对应一个比特位,当老年代中的某个对象持有了新生代对象的引用时,JVM就把这个对象对应的Card所在的位置标记为dirty(bit位设置为1)，这样在Minor GC时就不用扫描整个老年代
+ * ，而是扫描Card为Dirty对应的那些内存区域。这样子可以提高效率减少MinorGC的停顿时间
+**/
 class CardTable {
  public:
   static constexpr size_t kCardShift = 10;

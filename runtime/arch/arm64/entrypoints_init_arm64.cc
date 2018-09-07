@@ -132,6 +132,7 @@ void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
   qpoints->pReadBarrierMarkReg16 = is_active ? art_quick_read_barrier_mark_introspection : nullptr;
 }
 
+//Alloc（对象分配）、Cast（类型转换）、DexCache（Dex缓访问）、Field（成员变量访问）、FillArray（数组填充）、JNI（JNI函数调用）、Locks（锁）、Math（数学计算）、Intrinsics（内建函数调用）、Invocation（类方法调用）、Thread（线程操作）和Throws（异常处理）
 void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   DefaultInitEntryPoints(jpoints, qpoints);
 

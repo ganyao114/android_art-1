@@ -1702,6 +1702,7 @@ class Thread {
 
     // Entrypoint function pointers.
     // TODO: move this to more of a global offset table model to avoid per-thread duplication.
+    //两个跳转表，JNI 方法的，和 Quick Oat 的
     JniEntryPoints jni_entrypoints;
     QuickEntryPoints quick_entrypoints;
 

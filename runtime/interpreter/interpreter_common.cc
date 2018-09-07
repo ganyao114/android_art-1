@@ -519,29 +519,38 @@ ALWAYS_INLINE void CopyRegisters(ShadowFrame& caller_frame,
 
 // END DECLARATIONS.
 
+//在解释器中调用以本地机器指令执行的函数
 void ArtInterpreterToCompiledCodeBridge(Thread* self,
                                         ArtMethod* caller,
                                         ShadowFrame* shadow_frame,
                                         uint16_t arg_offset,
                                         JValue* result)
     REQUIRES_SHARED(Locks::mutator_lock_) {
+
+  //在 Java 调用栈帧中找到目标方法的 ArtMethod 的参数    
   ArtMethod* method = shadow_frame->GetMethod();
   // Ensure static methods are initialized.
+  //如果方法是静态的
   if (method->IsStatic()) {
     ObjPtr<mirror::Class> declaringClass = method->GetDeclaringClass();
+    //如果静态方法所在的类还没初始化
     if (UNLIKELY(!declaringClass->IsInitialized())) {
+      //先把 Java 调用的栈帧塞回去，因为待会又要进入 Java 世界调用 Java 的类初始化方法了
       self->PushShadowFrame(shadow_frame);
       StackHandleScope<1> hs(self);
       Handle<mirror::Class> h_class(hs.NewHandle(declaringClass));
+      //初始化该类，一般是调用 <cinit> *
       if (UNLIKELY(!Runtime::Current()->GetClassLinker()->EnsureInitialized(self, h_class, true,
                                                                             true))) {
         self->PopShadowFrame();
         DCHECK(self->IsExceptionPending());
         return;
       }
+      //再把栈帧弹出来
       self->PopShadowFrame();
       CHECK(h_class->IsInitializing());
       // Reload from shadow frame in case the method moved, this is faster than adding a handle.
+      //重新取出目标方法
       method = shadow_frame->GetMethod();
     }
   }
@@ -560,6 +569,7 @@ void ArtInterpreterToCompiledCodeBridge(Thread* self,
   if (jit != nullptr && caller != nullptr) {
     jit->NotifyInterpreterToCompiledCodeTransition(self, caller);
   }
+  //开始调用方法
   method->Invoke(self, shadow_frame->GetVRegArgs(arg_offset),
                  (shadow_frame->NumberOfVRegs() - arg_offset) * sizeof(uint32_t),
                  result, method->GetInterfaceMethodIfProxy(kRuntimePointerSize)->GetShorty());

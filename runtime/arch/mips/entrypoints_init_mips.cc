@@ -176,7 +176,8 @@ void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
                 "Non-direct C stub marked direct.");
 }
 
-//初始化函数调用跳转表
+//初始化基本函数调用跳转表
+//这样 OAT Native 代码可以正确跳转到 Java 的内部方法的实现-
 void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   // Note: MIPS has asserts checking for the type of entrypoint. Don't move it
   //       to InitDefaultEntryPoints().
@@ -205,7 +206,7 @@ void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   qpoints->pResolveString = art_quick_resolve_string;
   static_assert(!IsDirectEntrypoint(kQuickResolveString), "Non-direct C stub marked direct.");
 
-  // Field
+  // Field 各种 get/set Field
   qpoints->pSet8Instance = art_quick_set8_instance;
   static_assert(!IsDirectEntrypoint(kQuickSet8Instance), "Non-direct C stub marked direct.");
   qpoints->pSet8Static = art_quick_set8_static;
@@ -259,7 +260,7 @@ void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   qpoints->pAputObject = art_quick_aput_obj;
   static_assert(!IsDirectEntrypoint(kQuickAputObject), "Non-direct C stub marked direct.");
 
-  // JNI
+  // JNI 各种 JNI 接口
   qpoints->pJniMethodStart = JniMethodStart;
   static_assert(!IsDirectEntrypoint(kQuickJniMethodStart), "Non-direct C stub marked direct.");
   qpoints->pJniMethodFastStart = JniMethodFastStart;
@@ -287,7 +288,7 @@ void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   static_assert(!IsDirectEntrypoint(kQuickQuickGenericJniTrampoline),
                 "Non-direct C stub marked direct.");
 
-  // Locks
+  // Locks ，对象锁
   if (UNLIKELY(VLOG_IS_ON(systrace_lock_logging))) {
     qpoints->pLockObject = art_quick_lock_object_no_inline;
     qpoints->pUnlockObject = art_quick_unlock_object_no_inline;
@@ -298,7 +299,7 @@ void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   static_assert(!IsDirectEntrypoint(kQuickLockObject), "Non-direct C stub marked direct.");
   static_assert(!IsDirectEntrypoint(kQuickUnlockObject), "Non-direct C stub marked direct.");
 
-  // Math
+  // Math，数学计算
   qpoints->pCmpgDouble = CmpgDouble;
   static_assert(IsDirectEntrypoint(kQuickCmpgDouble), "Direct C stub not marked direct.");
   qpoints->pCmpgFloat = CmpgFloat;
@@ -382,7 +383,7 @@ void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   static_assert(!IsDirectEntrypoint(kQuickStringCompareTo), "Non-direct C stub marked direct.");
   qpoints->pMemcpy = memcpy;
 
-  // Invocation
+  // Invocation 方法调用
   qpoints->pQuickImtConflictTrampoline = art_quick_imt_conflict_trampoline;
   qpoints->pQuickResolutionTrampoline = art_quick_resolution_trampoline;
   qpoints->pQuickToInterpreterBridge = art_quick_to_interpreter_bridge;

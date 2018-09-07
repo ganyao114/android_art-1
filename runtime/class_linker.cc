@@ -5381,6 +5381,7 @@ bool ClassLinker::EnsureInitialized(Thread* self,
     SubtypeCheck<ObjPtr<mirror::Class>>::EnsureInitialized(c.Get());
     // TODO: Avoid taking subtype_check_lock_ if SubtypeCheck is already initialized.
   }
+  //初始化类 *
   const bool success = InitializeClass(self, c, can_init_fields, can_init_parents);
   if (!success) {
     if (can_init_fields && can_init_parents) {

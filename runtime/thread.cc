@@ -748,11 +748,15 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
 
   //初始化 CPU ，X86 CPU 需要设置 GPT 表*
   InitCpu();
-  //初始化外部库函数调用跳转表 *
+  //初始化 Java 内部函数调用跳转表 *
   InitTlsEntryPoints();
+  //
   RemoveSuspendTrigger();
+  //初始化 GC 卡表 *
   InitCardTable();
+  //初始化线程 ID
   InitTid();
+  //初始化解释执行跳转表 *
   interpreter::InitInterpreterTls(this);
 
 #ifdef ART_TARGET_ANDROID
@@ -764,6 +768,7 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
 
   tls32_.thin_lock_thread_id = thread_list->AllocThreadId(this);
 
+  //给当前的线程创建一个JNIEnvExt对象来描述它的JNI调用接口
   if (jni_env_ext != nullptr) {
     DCHECK_EQ(jni_env_ext->GetVm(), java_vm);
     DCHECK_EQ(jni_env_ext->GetSelf(), this);
@@ -776,7 +781,7 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
       return false;
     }
   }
-
+  //把线程注册到列表中
   thread_list->Register(this);
   return true;
 }

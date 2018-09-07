@@ -645,6 +645,7 @@ void CheckInterpreterAsmConstants() {
   CheckMterpAsmConstants();
 }
 
+//在 7.0 以上，ART 默认使用 Mterp 类型的 Interpreter 实现
 void InitInterpreterTls(Thread* self) {
   InitMterpTls(self);
 }
