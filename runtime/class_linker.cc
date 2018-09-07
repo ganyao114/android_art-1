@@ -3340,10 +3340,16 @@ void ClassLinker::LoadClassMembers(Thread* self,
       }
       class_def_method_index++;
     }
+
+    //加载抽象方法
     for (size_t i = 0; it.HasNextVirtualMethod(); i++, it.Next()) {
       ArtMethod* method = klass->GetVirtualMethodUnchecked(i, image_pointer_size_);
+      //load *
       LoadMethod(dex_file, it, klass, method);
       DCHECK_EQ(class_def_method_index, it.NumDirectMethods() + i);
+      //Link 这里因为是虚方法，所以不会有真正的 Code *
+      //但是这里会设置成解释执行的跳板方法
+      //当实际调用的时候会去搜索实现类中的实现方法
       LinkCode(this, method, oat_class_ptr, class_def_method_index);
       class_def_method_index++;
     }
@@ -3368,7 +3374,7 @@ void ClassLinker::LoadField(const ClassDataItemIterator& it,
   // Get access flags from the DexFile. If this is a boot class path class,
   // also set its runtime hidden API access flags.
 
-  //这就是 Android P 新引入的 API 限制，P 编译期间会读取一个黑名单，黑名单中的 Field，Method 会在编译期间将 access flag 写入到对应的类的 Dex 中
+  //这就是 Android P 新引入的 API 限制，P 编译期间会读取一个黑名单，黑名单中的 Field，Method 会在编译期间将 access flag 写入到对应的系统类的 Dex 中
   //这样 P 的 Art 在运行期间就知道哪些是 Hiden Api 了
   uint32_t access_flags = it.GetFieldAccessFlags();
   if (klass->IsBootStrapClassLoaded()) {

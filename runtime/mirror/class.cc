@@ -448,6 +448,7 @@ void Class::SetClassLoader(ObjPtr<ClassLoader> new_class_loader) {
   }
 }
 
+//到这里为止，很简单，遍历比对名字和签名
 template <typename SignatureType>
 static inline ArtMethod* FindInterfaceMethodWithSignature(ObjPtr<Class> klass,
                                                           const StringPiece& name,

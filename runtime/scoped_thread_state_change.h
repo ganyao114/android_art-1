@@ -91,6 +91,10 @@ class ScopedObjectAccessAlreadyRunnable : public ValueObject {
    * This will be called on otherwise unreferenced objects. We cannot do GC allocations here, and
    * it's best if we don't grab a mutex.
    */
+  
+  //将对象的引用添加到这个表里，和现在的栈帧建立关系
+  //这样当在 Native 使用 Java 对象的时候，这个对象不会被 GC
+  //并且在 native 方法返回的时候，该栈帧被销毁，这个引用也会被移除
   template<typename T>
   T AddLocalReference(ObjPtr<mirror::Object> obj) const
       REQUIRES_SHARED(Locks::mutator_lock_);

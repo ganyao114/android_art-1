@@ -408,6 +408,11 @@ const void* ArtMethod::RegisterNative(const void* native_method) {
   return new_native_method;
 }
 
+/**
+ *  UnregisterNative实际上就是将一个JNI方法的初始化入口设置为通过调用函数GetJniDlsymLookupStub获得的一个Stub。
+ * 这个Stub的作用是，当一个JNI方法被调用时，如果还没有显示地注册有Native函数，那么它就会自动从已加载的SO文件查找是否存在一个对应的Native函数。
+ * 如果存在的话，就将它注册为JNI方法的Native函数，并且执行它。这就是隐式的JNI方法注册 
+**/
 void ArtMethod::UnregisterNative() {
   CHECK(IsNative()) << PrettyMethod();
   // restore stub to lookup native pointer via dlsym

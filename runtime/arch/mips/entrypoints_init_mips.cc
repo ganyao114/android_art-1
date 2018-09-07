@@ -176,6 +176,7 @@ void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
                 "Non-direct C stub marked direct.");
 }
 
+//初始化函数调用跳转表
 void InitEntryPoints(JniEntryPoints* jpoints, QuickEntryPoints* qpoints) {
   // Note: MIPS has asserts checking for the type of entrypoint. Don't move it
   //       to InitDefaultEntryPoints().

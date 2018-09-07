@@ -84,6 +84,7 @@ static bool IsCallerTrusted(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) 
   return hiddenapi::IsCallerTrusted(GetCallingClass(self, /* num_frames */ 1));
 }
 
+//这个是 inline 函数。。。无法 hook
 template<typename T>
 ALWAYS_INLINE static bool ShouldBlockAccessToMember(T* member, Thread* self)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -241,20 +242,27 @@ static ObjPtr<mirror::Class> EnsureInitialized(Thread* self, ObjPtr<mirror::Clas
   return h_klass.Get();
 }
 
+//查找方法
 static jmethodID FindMethodID(ScopedObjectAccess& soa, jclass jni_class,
                               const char* name, const char* sig, bool is_static)
     REQUIRES_SHARED(Locks::mutator_lock_) {
+
+  //将参数jni_class的值转换为一个Class指针c，因此就可以得到一个Class对象，并且通过ClassLinker类的成员函数EnsureInitialized确保该Class对象描述的类已经初始化    
   ObjPtr<mirror::Class> c = EnsureInitialized(soa.Self(), soa.Decode<mirror::Class>(jni_class));
   if (c == nullptr) {
     return nullptr;
   }
   ArtMethod* method = nullptr;
   auto pointer_size = Runtime::Current()->GetClassLinker()->GetImagePointerSize();
+
+  //内部很简单，只是遍历之前塞进去的列表，比对方法名和签名 *
   if (c->IsInterface()) {
     method = c->FindInterfaceMethod(name, sig, pointer_size);
   } else {
     method = c->FindClassMethod(name, sig, pointer_size);
   }
+
+  //这里是先取到再去判断 Access Flag，然后 Block，可惜这个是 inline 函数，无法 hook
   if (method != nullptr && ShouldBlockAccessToMember(method, soa.Self())) {
     method = nullptr;
   }
@@ -478,6 +486,7 @@ class JNI {
     } else {
       c = class_linker->FindSystemClass(soa.Self(), descriptor.c_str());
     }
+    //将 JClass 添加到引用表里返回 *
     return soa.AddLocalReference<jclass>(c);
   }
 

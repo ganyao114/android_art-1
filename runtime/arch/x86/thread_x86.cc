@@ -41,6 +41,7 @@ struct descriptor_table_entry_t {
 
 namespace art {
 
+//初始化 GPT 表
 void Thread::InitCpu() {
   // Take the ldt lock, Thread::Current isn't yet established.
   MutexLock mu(nullptr, *Locks::modify_ldt_lock_);

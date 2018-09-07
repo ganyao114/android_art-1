@@ -145,6 +145,7 @@ void Thread::SetIsGcMarkingAndUpdateEntrypoints(bool is_marking) {
   ResetQuickAllocEntryPointsForThread(is_marking);
 }
 
+//初始外部库函数调用跳转表
 void Thread::InitTlsEntryPoints() {
   // Insert a placeholder so we can easily tell if we call an unimplemented entry point.
   uintptr_t* begin = reinterpret_cast<uintptr_t*>(&tlsPtr_.jni_entrypoints);
@@ -153,6 +154,7 @@ void Thread::InitTlsEntryPoints() {
   for (uintptr_t* it = begin; it != end; ++it) {
     *it = reinterpret_cast<uintptr_t>(UnimplementedEntryPoint);
   }
+  //*
   InitEntryPoints(&tlsPtr_.jni_entrypoints, &tlsPtr_.quick_entrypoints);
 }
 
@@ -722,6 +724,7 @@ void Thread::CreateNativeThread(JNIEnv* env, jobject java_peer, size_t stack_siz
   }
 }
 
+//初始化线程
 bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_env_ext) {
   // This function does all the initialization that must be run by the native thread it applies to.
   // (When we create a new thread from managed code, we allocate the Thread* in Thread::Create so
@@ -731,14 +734,21 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
 
   // Set pthread_self_ ahead of pthread_setspecific, that makes Thread::Current function, this
   // avoids pthread_self_ ever being invalid when discovered from Thread::Current().
+
+  //获得当前线程 ID
   tlsPtr_.pthread_self = pthread_self();
   CHECK(is_started_);
 
   SetUpAlternateSignalStack();
+
+  //初始化线程运行栈 *
   if (!InitStackHwm()) {
     return false;
   }
+
+  //初始化 CPU ，X86 CPU 需要设置 GPT 表*
   InitCpu();
+  //初始化外部库函数调用跳转表 *
   InitTlsEntryPoints();
   RemoveSuspendTrigger();
   InitCardTable();
@@ -771,6 +781,7 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
   return true;
 }
 
+//创建 Native 线程 并 Attach Thread 并且绑定 Java Thread 对象
 template <typename PeerAction>
 Thread* Thread::Attach(const char* thread_name, bool as_daemon, PeerAction peer_action) {
   Runtime* runtime = Runtime::Current();
@@ -781,15 +792,20 @@ Thread* Thread::Attach(const char* thread_name, bool as_daemon, PeerAction peer_
   }
   Thread* self;
   {
+    //ART 正在关闭的时候不允许创建新线程
     MutexLock mu(nullptr, *Locks::runtime_shutdown_lock_);
     if (runtime->IsShuttingDownLocked()) {
       LOG(WARNING) << "Thread attaching while runtime is shutting down: " <<
           ((thread_name != nullptr) ? thread_name : "(Unnamed)");
       return nullptr;
     } else {
+      //通知 Runtime 开始创建线程了，可能 GC 模块比较关心线程的创建
       Runtime::Current()->StartThreadBirth();
+      //new 新线程 *
       self = new Thread(as_daemon);
+      //线程初始化 *
       bool init_success = self->Init(runtime->GetThreadList(), runtime->GetJavaVM());
+      //通知线程创建结束
       Runtime::Current()->EndThreadBirth();
       if (!init_success) {
         delete self;
@@ -803,6 +819,7 @@ Thread* Thread::Attach(const char* thread_name, bool as_daemon, PeerAction peer_
   CHECK_NE(self->GetState(), kRunnable);
   self->SetState(kNative);
 
+  //执行前面生成并绑定 Java Thread 的操作
   // Run the action that is acting on the peer.
   if (!peer_action(self)) {
     runtime->GetThreadList()->Unregister(self);
@@ -820,6 +837,7 @@ Thread* Thread::Attach(const char* thread_name, bool as_daemon, PeerAction peer_
     self->Dump(LOG_STREAM(INFO));
   }
 
+  //通知 Runtime 当前线程开始运行
   {
     ScopedObjectAccess soa(self);
     runtime->GetRuntimeCallbacks()->ThreadStart(self);
@@ -828,17 +846,22 @@ Thread* Thread::Attach(const char* thread_name, bool as_daemon, PeerAction peer_
   return self;
 }
 
+//将 Java 线程关联到当前 Native 线程
 Thread* Thread::Attach(const char* thread_name,
                        bool as_daemon,
                        jobject thread_group,
                        bool create_peer) {
+
+  //C11 的 lambda 表达式，这段代码相当于一个方法，create_peer_action 是方法指针
+  //方法用于创建当前线程在 Java 层的副本并互相绑定                       
   auto create_peer_action = [&](Thread* self) {
     // If we're the main thread, ClassLinker won't be created until after we're attached,
     // so that thread needs a two-stage attach. Regular threads don't need this hack.
     // In the compiler, all threads need this hack, because no-one's going to be getting
     // a native peer!
-    //创建 Native 层的副本
+    //如果需要创建在 Java 层的副本 *
     if (create_peer) {
+      //创建 Java Thread 对象并绑定 *
       self->CreatePeer(thread_name, as_daemon, thread_group);
       if (self->IsExceptionPending()) {
         // We cannot keep the exception around, as we're deleting self. Try to be helpful and log
@@ -862,6 +885,7 @@ Thread* Thread::Attach(const char* thread_name,
     }
     return true;
   };
+  //继续 *
   return Attach(thread_name, as_daemon, create_peer_action);
 }
 
@@ -883,9 +907,12 @@ Thread* Thread::Attach(const char* thread_name, bool as_daemon, jobject thread_p
   return Attach(thread_name, as_daemon, set_peer_action);
 }
 
+//如果 Thread 是在 native 层启动，那么 Java 层对应的也需要有一个 Java Thread 对象，并与 native 线程结构体绑定
 void Thread::CreatePeer(const char* name, bool as_daemon, jobject thread_group) {
   Runtime* runtime = Runtime::Current();
   CHECK(runtime->IsStarted());
+
+  //tlsPtr_ 当前 Native 线程的指针
   JNIEnv* env = tlsPtr_.jni_env;
 
   if (thread_group == nullptr) {
@@ -897,9 +924,12 @@ void Thread::CreatePeer(const char* name, bool as_daemon, jobject thread_group) 
     CHECK(IsExceptionPending());
     return;
   }
+
+  //从 Native 线程取出参数
   jint thread_priority = GetNativePriority();
   jboolean thread_is_daemon = as_daemon;
 
+  //分配 Java Thread 对象的内存
   ScopedLocalRef<jobject> peer(env, env->AllocObject(WellKnownClasses::java_lang_Thread));
   if (peer.get() == nullptr) {
     CHECK(IsExceptionPending());
@@ -907,8 +937,11 @@ void Thread::CreatePeer(const char* name, bool as_daemon, jobject thread_group) 
   }
   {
     ScopedObjectAccess soa(this);
+    //将 Java Thread 对象设置到 Native Thread 对象中去
     tlsPtr_.opeer = soa.Decode<mirror::Object>(peer.get()).Ptr();
   }
+
+  //调用 Java Thread 对象的初始化方法，把线程信息塞进去
   env->CallNonvirtualVoidMethod(peer.get(),
                                 WellKnownClasses::java_lang_Thread,
                                 WellKnownClasses::java_lang_Thread_init,
@@ -919,9 +952,12 @@ void Thread::CreatePeer(const char* name, bool as_daemon, jobject thread_group) 
 
   Thread* self = this;
   DCHECK_EQ(self, Thread::Current());
+
+  //将 Native 线程的指针塞到 Java Thread 中去
   env->SetLongField(peer.get(), WellKnownClasses::java_lang_Thread_nativePeer,
                     reinterpret_cast<jlong>(self));
-
+  
+  //得到线程名
   ScopedObjectAccess soa(self);
   StackHandleScope<1> hs(self);
   MutableHandle<mirror::String> peer_thread_name(hs.NewHandle(GetThreadName()));
@@ -931,6 +967,7 @@ void Thread::CreatePeer(const char* name, bool as_daemon, jobject thread_group) 
     // available (in the compiler, in tests), we manually assign the
     // fields the constructor should have set.
     if (runtime->IsActiveTransaction()) {
+      //初始化 Java Thread *
       InitPeer<true>(soa,
                      tlsPtr_.opeer,
                      thread_is_daemon,
@@ -1004,6 +1041,7 @@ jobject Thread::CreateCompileTimePeer(JNIEnv* env,
   return peer.release();
 }
 
+//其实就是 set 几个线程信息到 Java Thread 内
 template<bool kTransactionActive>
 void Thread::InitPeer(ScopedObjectAccessAlreadyRunnable& soa,
                       ObjPtr<mirror::Object> peer,
@@ -1083,6 +1121,7 @@ static void GetThreadStack(pthread_t thread,
 #endif
 }
 
+//设置线程的栈大小
 bool Thread::InitStackHwm() {
   void* read_stack_base;
   size_t read_stack_size;
@@ -1137,10 +1176,13 @@ bool Thread::InitStackHwm() {
     // to install our own region so we need to move the limits
     // of the stack to make room for it.
 
+    //这里栈大小需要加上 kStackOverflowProtectedSize
+    //加上这个是为了当栈溢出的时候有机会捕捉到，不然 ART 进程就会直接奔溃，没有机会向 Java 层抛出栈溢出异常
     tlsPtr_.stack_begin += read_guard_size + kStackOverflowProtectedSize;
     tlsPtr_.stack_end += read_guard_size + kStackOverflowProtectedSize;
     tlsPtr_.stack_size -= read_guard_size;
 
+    //安装用于捕捉栈溢出异常的信号
     InstallImplicitProtection();
   }
 
