@@ -337,8 +337,13 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
   // If the runtime is not yet started or it is required by the debugger, then perform the
   // Invocation by the interpreter, explicitly forcing interpretation over JIT to prevent
   // cycling around the various JIT/Interpreter methods that handle method invocation.
+
+  //如果现在虚拟机还没有启动完成，或者虚拟机是被调试器启动的
+  //在这两种情况下将使用解释器执行该方法
   if (UNLIKELY(!runtime->IsStarted() || Dbg::IsForcedInterpreterNeededForCalling(self, this))) {
+    //static 方法不要传入对象实例 *
     if (IsStatic()) {
+      //使用解释器执行方法
       art::interpreter::EnterInterpreterFromInvoke(
           self, this, nullptr, args, result, /*stay_in_interpreter*/ true);
     } else {

@@ -238,18 +238,22 @@ enum InterpreterImplKind {
 
 static constexpr InterpreterImplKind kInterpreterImplKind = kMterpImplKind;
 
+//通过解释器执行方法 *
 static inline JValue Execute(
     Thread* self,
     const CodeItemDataAccessor& accessor,
     ShadowFrame& shadow_frame,
     JValue result_register,
     bool stay_in_interpreter = false) REQUIRES_SHARED(Locks::mutator_lock_) {
+  //必要检查
   DCHECK(!shadow_frame.GetMethod()->IsAbstract());
   DCHECK(!shadow_frame.GetMethod()->IsNative());
   if (LIKELY(shadow_frame.GetDexPC() == 0)) {  // Entering the method, but not via deoptimization.
     if (kIsDebugBuild) {
       self->AssertNoPendingException();
     }
+
+    //如果启用 Instrumentation 代理，则由 Instrumentation 代理方法的执行
     instrumentation::Instrumentation* instrumentation = Runtime::Current()->GetInstrumentation();
     ArtMethod *method = shadow_frame.GetMethod();
 
@@ -267,6 +271,7 @@ static inline JValue Execute(
       }
     }
 
+    //检查是否该方法已经被 JIT，有则转而执行 JIT 代码
     if (!stay_in_interpreter) {
       jit::Jit* jit = Runtime::Current()->GetJit();
       if (jit != nullptr) {
@@ -301,6 +306,7 @@ static inline JValue Execute(
   bool transaction_active = Runtime::Current()->IsActiveTransaction();
   if (LIKELY(method->SkipAccessChecks())) {
     // Enter the "without access check" interpreter.
+    //检查解释器实现，并调用对应的实现 *
     if (kInterpreterImplKind == kMterpImplKind) {
       if (transaction_active) {
         // No Mterp variant - just use the switch interpreter.
@@ -367,6 +373,8 @@ static inline JValue Execute(
   }
 }
 
+
+//进入解释器执行该方法
 void EnterInterpreterFromInvoke(Thread* self,
                                 ArtMethod* method,
                                 ObjPtr<mirror::Object> receiver,
@@ -374,6 +382,8 @@ void EnterInterpreterFromInvoke(Thread* self,
                                 JValue* result,
                                 bool stay_in_interpreter) {
   DCHECK_EQ(self, Thread::Current());
+
+  //先检查栈空间是否够用，不够抛出异常
   bool implicit_check = !Runtime::Current()->ExplicitStackOverflowChecks();
   if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEndForInterpreter(implicit_check))) {
     ThrowStackOverflowError(self);
@@ -390,6 +400,8 @@ void EnterInterpreterFromInvoke(Thread* self,
 
   const char* old_cause = self->StartAssertNoThreadSuspension("EnterInterpreterFromInvoke");
   CodeItemDataAccessor accessor(method->DexInstructionData());
+
+  //准备虚拟寄存器数量，和本地变量数量
   uint16_t num_regs;
   uint16_t num_ins;
   if (accessor.HasCodeItem()) {
@@ -407,30 +419,39 @@ void EnterInterpreterFromInvoke(Thread* self,
       num_ins++;
     }
   }
+
+  //准备即将调用的方法的栈帧
   // Set up shadow frame with matching number of reference slots to vregs.
   ShadowFrame* last_shadow_frame = self->GetManagedStack()->GetTopShadowFrame();
   ShadowFrameAllocaUniquePtr shadow_frame_unique_ptr =
       CREATE_SHADOW_FRAME(num_regs, last_shadow_frame, method, /* dex pc */ 0);
   ShadowFrame* shadow_frame = shadow_frame_unique_ptr.get();
+  //将栈帧 push 到当前线程的末尾
   self->PushShadowFrame(shadow_frame);
 
+  //如果不是调用静态方法，需要将方法所在类的实例 push 到栈帧中备用
   size_t cur_reg = num_regs - num_ins;
   if (!method->IsStatic()) {
     CHECK(receiver != nullptr);
     shadow_frame->SetVRegReference(cur_reg, receiver.Ptr());
     ++cur_reg;
   }
+
+  //准备方法参数列表
   uint32_t shorty_len = 0;
+  //获取方法参数描述符
   const char* shorty = method->GetShorty(&shorty_len);
   for (size_t shorty_pos = 0, arg_pos = 0; cur_reg < num_regs; ++shorty_pos, ++arg_pos, cur_reg++) {
     DCHECK_LT(shorty_pos + 1, shorty_len);
     switch (shorty[shorty_pos + 1]) {
+      //如果是引用类型参数
       case 'L': {
         ObjPtr<mirror::Object> o =
             reinterpret_cast<StackReference<mirror::Object>*>(&args[arg_pos])->AsMirrorPtr();
         shadow_frame->SetVRegReference(cur_reg, o.Ptr());
         break;
       }
+      //Double类型
       case 'J': case 'D': {
         uint64_t wide_value = (static_cast<uint64_t>(args[arg_pos + 1]) << 32) | args[arg_pos];
         shadow_frame->SetVRegLong(cur_reg, wide_value);
@@ -438,6 +459,7 @@ void EnterInterpreterFromInvoke(Thread* self,
         arg_pos++;
         break;
       }
+      //其他类型
       default:
         shadow_frame->SetVReg(cur_reg, args[arg_pos]);
         break;
@@ -445,6 +467,7 @@ void EnterInterpreterFromInvoke(Thread* self,
   }
   self->EndAssertNoThreadSuspension(old_cause);
   // Do this after populating the shadow frame in case EnsureInitialized causes a GC.
+  //如果是 static 方法，检查并确保类已经初始化
   if (method->IsStatic() && UNLIKELY(!method->GetDeclaringClass()->IsInitialized())) {
     ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
     StackHandleScope<1> hs(self);
@@ -455,6 +478,8 @@ void EnterInterpreterFromInvoke(Thread* self,
       return;
     }
   }
+
+  //如果不是是 Native 方法，调用 Execute 执行解释器 *
   if (LIKELY(!method->IsNative())) {
     JValue r = Execute(self, accessor, *shadow_frame, JValue(), stay_in_interpreter);
     if (result != nullptr) {
@@ -472,6 +497,7 @@ void EnterInterpreterFromInvoke(Thread* self,
       InterpreterJni(self, method, shorty, receiver, args, result);
     }
   }
+  //调用结束后弹出并销毁栈帧
   self->PopShadowFrame();
 }
 

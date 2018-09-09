@@ -188,6 +188,7 @@ inline const char* ArtMethod::GetDeclaringClassDescriptor() {
   return dex_file->GetMethodDeclaringClassDescriptor(dex_file->GetMethodId(dex_method_idx));
 }
 
+//返回方法参数列表描述符
 inline const char* ArtMethod::GetShorty() {
   uint32_t unused_length;
   return GetShorty(&unused_length);
