@@ -104,6 +104,7 @@ static inline u2 get2LE(unsigned char const* pSrc) {
 /*
  * Converts a single-character primitive type into human-readable form.
  */
+//JVM 参数类型别名
 static const char* primitiveTypeLabel(char typeChar) {
   switch (typeChar) {
     case 'B': return "byte";

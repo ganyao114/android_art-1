@@ -356,8 +356,11 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
     DCHECK_EQ(runtime->GetClassLinker()->GetImagePointerSize(), kRuntimePointerSize);
 
     constexpr bool kLogInvocationStartAndReturn = false;
+    //如果有 Quick OAT
     bool have_quick_code = GetEntryPointFromQuickCompiledCode() != nullptr;
     if (LIKELY(have_quick_code)) {
+
+      //此处应该无法执行到
       if (kLogInvocationStartAndReturn) {
         LOG(INFO) << StringPrintf(
             "Invoking '%s' quick code=%p static=%d", PrettyMethod().c_str(),
@@ -365,8 +368,10 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
       }
 
       // Ensure that we won't be accidentally calling quick compiled code when -Xint.
+      //用户使用 Xint 参数启动虚拟机，则只能强制使用解释执行
       if (kIsDebugBuild && runtime->GetInstrumentation()->IsForcedInterpretOnly()) {
         CHECK(!runtime->UseJitCompilation());
+        //获取跳板入口
         const void* oat_quick_code =
             (IsNative() || !IsInvokable() || IsProxyMethod() || IsObsolete())
             ? nullptr
@@ -375,15 +380,18 @@ void ArtMethod::Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue*
             << "Don't call compiled code when -Xint " << PrettyMethod();
       }
 
+      //进入跳板 code *
       if (!IsStatic()) {
         (*art_quick_invoke_stub)(this, args, args_size, self, result, shorty);
       } else {
         (*art_quick_invoke_static_stub)(this, args, args_size, self, result, shorty);
       }
+      //处理返回值
       if (UNLIKELY(self->GetException() == Thread::GetDeoptimizationException())) {
         // Unusual case where we were running generated code and an
         // exception was thrown to force the activations to be removed from the
         // stack. Continue execution in the interpreter.
+        //如果方法抛出异常
         self->DeoptimizeWithDeoptimizationException(result);
       }
       if (kLogInvocationStartAndReturn) {

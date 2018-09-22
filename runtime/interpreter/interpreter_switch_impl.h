@@ -41,6 +41,7 @@ struct SwitchImplContext {
   ShadowFrame& shadow_frame;
   JValue& result_register;
   bool interpret_one_instruction;
+  //返回值
   JValue result;
 };
 

@@ -24,9 +24,11 @@ extern "C" void art_quick_invoke_stub_internal(ArtMethod*, uint32_t*, uint32_t,
                                                Thread* self, JValue* result, uint32_t, uint32_t*,
                                                uint32_t*);
 
+//寄存器设置，将部分参数分类装入寄存器数组待对应寄存器使用，超出的在栈中
 template <bool kIsStatic>
 static void quick_invoke_reg_setup(ArtMethod* method, uint32_t* args, uint32_t args_size,
                                    Thread* self, JValue* result, const char* shorty) {
+  //不允许同时有软硬浮点计算实现                                   
   // Note: We do not follow aapcs ABI in quick code for both softfp and hardfp.
   uint32_t core_reg_args[4];  // r0 ~ r3
   uint32_t fp_reg_args[16];  // s0 ~ s15 (d0 ~ d7)
@@ -44,6 +46,7 @@ static void quick_invoke_reg_setup(ArtMethod* method, uint32_t* args, uint32_t a
   for (uint32_t shorty_index = 1; shorty[shorty_index] != '\0'; ++shorty_index, ++arg_index) {
     char arg_type = shorty[shorty_index];
     switch (arg_type) {
+      //存入双精度浮点寄存器数组
       case 'D': {
         // Copy double argument into fp_reg_args if there are still floating point reg arguments.
         // Double should not overlap with float.
@@ -55,6 +58,7 @@ static void quick_invoke_reg_setup(ArtMethod* method, uint32_t* args, uint32_t a
         ++arg_index;
         break;
       }
+      //存入单精度浮点寄存器数组
       case 'F':
         // Copy float argument into fp_reg_args if there are still floating point reg arguments.
         // If fpr_index is odd then its pointing at a hole next to an existing float argument. If we
@@ -69,6 +73,7 @@ static void quick_invoke_reg_setup(ArtMethod* method, uint32_t* args, uint32_t a
           fp_reg_args[fpr_index++] = args[arg_index];
         }
         break;
+      //Long类型，只能存下两个
       case 'J':
         if (gpr_index == 1) {
           // Don't use r1-r2 as a register pair, move to r2-r3 instead.
@@ -90,6 +95,7 @@ static void quick_invoke_reg_setup(ArtMethod* method, uint32_t* args, uint32_t a
     }
   }
 
+  //最终调用到对应的汇编实现 *
   art_quick_invoke_stub_internal(method, args, args_size, self, result, result_in_float,
       core_reg_args, fp_reg_args);
 }

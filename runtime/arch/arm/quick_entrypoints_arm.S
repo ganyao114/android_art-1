@@ -558,9 +558,9 @@ ENTRY art_quick_invoke_stub_internal
     and    r4, #0xFFFFFFF0                 @ convention only aligns to 8B, so we have to ensure ART
     mov    sp, r4                          @ 16B alignment ourselves.
 
-    mov    r4, r0                          @ save method*
+    mov    r4, r0                          @ save method* method 指针是第一个参数
     add    r0, sp, #4                      @ pass stack pointer + method ptr as dest for memcpy
-    bl     memcpy                          @ memcpy (dest, src, bytes)
+    bl     memcpy                          @ memcpy (dest, src, bytes) 拷贝参数
     mov    ip, #0                          @ set ip to 0
     str    ip, [sp]                        @ store null for method* at bottom of frame
 
@@ -574,7 +574,7 @@ ENTRY art_quick_invoke_stub_internal
 
     REFRESH_MARKING_REGISTER
 
-    ldr    ip, [r0, #ART_METHOD_QUICK_CODE_OFFSET_32]  @ get pointer to the code
+    ldr    ip, [r0, #ART_METHOD_QUICK_CODE_OFFSET_32]  @ get pointer to the code 指向 ArtMethod -> ptr_sized_fields_ -> entry_point_from_quick_compiled_code_
     blx    ip                              @ call the method
 
     mov    sp, r11                         @ restore the stack pointer
