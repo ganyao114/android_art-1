@@ -1094,9 +1094,11 @@ class Heap {
   static void VlogHeapGrowth(size_t max_allowed_footprint, size_t new_footprint, size_t alloc_size);
 
   // All-known continuous spaces, where objects lie within fixed bounds.
+  //三个在地址空间上连续的Image Space、Zygote Space和Allocation Space
   std::vector<space::ContinuousSpace*> continuous_spaces_ GUARDED_BY(Locks::mutator_lock_);
 
   // All-known discontinuous spaces, where objects may be placed throughout virtual memory.
+  //一个std::vector<space::DiscontinuousSpace*>向量，保存了图1所示的在地址空间上不连续的Large Object Space
   std::vector<space::DiscontinuousSpace*> discontinuous_spaces_ GUARDED_BY(Locks::mutator_lock_);
 
   // All-known alloc spaces, where objects may be or have been allocated.
@@ -1145,6 +1147,8 @@ class Heap {
   Mutex* pending_task_lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
 
   // How many GC threads we may use for paused parts of garbage collection.
+  //一个size_t变量，指定在GC暂停阶段用来同时执行GC任务的线程数，可以通过ART运行时启动选项-XX:ParallelGCThreads指定。
+  //如果没有指定，它的值就等于CPU核心数减1。这里之所以要减1是因为parallel_gc_threads_描述的实际上是除了当前GC线程之外的其它也用于GC任务的线程的个数
   const size_t parallel_gc_threads_;
 
   // How many GC threads we may use for unpaused parts of garbage collection.
@@ -1346,7 +1350,9 @@ class Heap {
 
   // Compacting GC disable count, prevents compacting GC from running iff > 0.
   size_t disable_moving_gc_count_ GUARDED_BY(gc_complete_lock_);
+  
 
+  //垃圾收集器实现
   std::vector<collector::GarbageCollector*> garbage_collectors_;
   collector::SemiSpace* semi_space_collector_;
   collector::MarkCompact* mark_compact_collector_;
