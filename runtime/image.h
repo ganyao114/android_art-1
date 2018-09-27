@@ -385,22 +385,30 @@ class PACKED(4) ImageHeader {
     return filename;
   }
 
+  //Image文件魔数，固定为'art\n'
   uint8_t magic_[4];
+
+  //Image文件版本号
   uint8_t version_[4];
 
   // Required base address for mapping the image.
+  //指定Image Space映射到内存的起始地址
   uint32_t image_begin_;
 
   // Image size, not page aligned.
+  //Image Space的大小
   uint32_t image_size_;
 
   // Checksum of the oat file we link to for load time sanity check.
+  //
   uint32_t oat_checksum_;
 
   // Start address for oat file. Will be before oat_data_begin_ for .so files.
+  //与Image文件关联的boot.art@classes.oat文件映射到内存的起始位置
   uint32_t oat_file_begin_;
 
   // Required oat address expected by image Method::GetCode() pointers.
+  //与Image文件关联的boot.art@classes.oat文件的OATDATA段映射到内存的起始位置
   uint32_t oat_data_begin_;
 
   // End of oat data address range for this image file.
@@ -424,6 +432,7 @@ class PACKED(4) ImageHeader {
   int32_t patch_delta_;
 
   // Absolute address of an Object[] of objects needed to reinitialize from an image.
+  //一个Object对象地址数组地址，这些Object对象就是在Image Space上分配的对象
   uint32_t image_roots_;
 
   // Pointer size, this affects the size of the ArtMethods.

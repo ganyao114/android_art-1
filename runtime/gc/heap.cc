@@ -161,6 +161,24 @@ static inline bool CareAboutPauseTimes() {
   return Runtime::Current()->InJankPerceptibleProcessState();
 }
 
+/**
+【image space】
+  根据boot.art这个内存镜像文件创建的space，映射地址是boot.art里指定的。
+这块有系统的java类，其内存不会被释放，所以也不需要有堆管理模块。加载image space的同时会加载boot.oat文件。
+【main space】
+  从300M的地址也就是0x12c00000开始的大小为512M的内存区域，绝大部分的object都利用这段空间。它的堆管理模块是RocAlloc。
+有一个相同大小的备用main space区域，暂时不清楚其用途。
+【zygote(non moving) space】
+  紧挨着boot.oat的内存区域，大小为64M，zygote启动时是以non moving space的形式存在，
+主要用于non moving的object：主要是non moving的class或者从其他non moving区域里拷贝出来的对象，比如image space就是non moving区域。
+它的堆栈管理块是Dlmalloc。
+【large object space】
+  紧挨着non moving spage的区域，申请大于等于12k的基本类型或者string类型的数组时会用到这部分内存，
+根据配置可分为FreeListSpace和LargeObjectMapSpace。
+其中LargeObjectMapSpace是次alloc和free都会调用系统的mmap和munmap，管理模块逻辑简单，但效率低。
+FreeListSpace会一次性mmap一块512M内存，用一个相对复杂点的（相对于RocAlloc和Dlmalloc简单的多）逻辑管理这块内存，效率高比LargeObjectMapSpace高。
+一般系统默认用FreeListSpace作为large object space。
+**/
 Heap::Heap(size_t initial_size,
            size_t growth_limit,
            size_t min_free,
@@ -309,6 +327,7 @@ Heap::Heap(size_t initial_size,
   live_bitmap_.reset(new accounting::HeapBitmap(this));
   mark_bitmap_.reset(new accounting::HeapBitmap(this));
   // Requested begin for the alloc space, to follow the mapped image and oat files
+  //space 开始地址
   uint8_t* requested_alloc_space_begin = nullptr;
   if (foreground_collector_type_ == kCollectorTypeCC) {
     // Need to use a low address so that we can allocate a contiguous 2 * Xmx space when there's no
@@ -316,7 +335,7 @@ Heap::Heap(size_t initial_size,
     requested_alloc_space_begin = kPreferredAllocSpaceBegin;
   }
 
-  //加载 /system/framework/boot.art
+  //加载 /system/framework/boot.art *
   // Load image space(s).
   if (space::ImageSpace::LoadBootImage(image_file_name,
                                        image_instruction_set,
@@ -376,6 +395,11 @@ Heap::Heap(size_t initial_size,
   }
   std::string error_str;
   std::unique_ptr<MemMap> non_moving_space_mem_map;
+
+  //分配 zygote space
+  //  这时候代码是运行在Zygote进程中，而Zygote进程中的ART运行时刚开始的时候是没有Zygote Space和Allocation Space之分的。
+  //等到Zygote进程fork第一个子进程的时候，才会将这里创建的Zygote Space一分为二，得到一个Zygote Space和一个Allocation Space。
+  //由于这里创建的Zygote Space也是一个地址空间连续的Space，因此它也会被Heap类的成员函数AddContinuousSpace添加一个在地址空间上连续的Space列表中
   if (separate_non_moving_space) {
     ScopedTrace trace2("Create separate non moving space");
     // If we are the zygote, the non moving space becomes the zygote space when we run
@@ -434,6 +458,7 @@ Heap::Heap(size_t initial_size,
     AddSpace(non_moving_space_);
   }
   // Create other spaces based on whether or not we have a moving GC.
+  //concurrent_copying算法，使用 RegionSpace 分配
   if (foreground_collector_type_ == kCollectorTypeCC) {
     CHECK(separate_non_moving_space);
     // Reserve twice the capacity, to allow evacuating every region for explicit GCs.
@@ -443,6 +468,9 @@ Heap::Heap(size_t initial_size,
     CHECK(region_space_mem_map != nullptr) << "No region space mem map";
     region_space_ = space::RegionSpace::Create(kRegionSpaceName, region_space_mem_map);
     AddSpace(region_space_);
+
+  //当Foreground GC是Compacting GC，但是不是Generational Semi-Space GC时，
+  //分别是用前面创建的匿名共享内存main_mem_map_1和main_mem_map_2创建两个Bump Pointer Space，并且保存在Heap类的成员变量bump_pointer_space_和temp_space_中
   } else if (IsMovingGc(foreground_collector_type_) &&
       foreground_collector_type_ != kCollectorTypeGSS) {
     // Create bump pointer spaces.
@@ -458,6 +486,8 @@ Heap::Heap(size_t initial_size,
     AddSpace(temp_space_);
     CHECK(separate_non_moving_space);
   } else {
+    //当Foreground GC是Mark-Sweep GC 或者 Generational Semi-Space GC时
+    //首先是调用Heap类的成员函数CreateMainMallocSpace创建一个Main Space，这个Main Space是一块DlMallocSpace或者RosAllocSpace，并且由Heap类的成员变量main_space_指向
     CreateMainMallocSpace(main_mem_map_1.release(), initial_size, growth_limit_, capacity_);
     CHECK(main_space_ != nullptr);
     AddSpace(main_space_);
