@@ -179,6 +179,7 @@ static inline bool CareAboutPauseTimes() {
 FreeListSpace会一次性mmap一块512M内存，用一个相对复杂点的（相对于RocAlloc和Dlmalloc简单的多）逻辑管理这块内存，效率高比LargeObjectMapSpace高。
 一般系统默认用FreeListSpace作为large object space。
 **/
+//https://www.jianshu.com/p/1c73eeebafcd
 Heap::Heap(size_t initial_size,
            size_t growth_limit,
            size_t min_free,

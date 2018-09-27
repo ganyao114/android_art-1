@@ -24,11 +24,17 @@ namespace gc {
 
 // Different types of allocators.
 enum AllocatorType {
+  //表示在Bump Pointer Space中分配对象
   kAllocatorTypeBumpPointer,  // Use BumpPointer allocator, has entrypoints.
+  //表示要在由Bump Pointer Space提供的线程局部分配缓冲区中分配对象
   kAllocatorTypeTLAB,  // Use TLAB allocator, has entrypoints.
+  //表示要在Ros Alloc Space分配对象
   kAllocatorTypeRosAlloc,  // Use RosAlloc allocator, has entrypoints.
+  //表示要在Dl Malloc Space分配对象
   kAllocatorTypeDlMalloc,  // Use dlmalloc allocator, has entrypoints.
+  //表示要在Non Moving Space分配对象
   kAllocatorTypeNonMoving,  // Special allocator for non moving objects, doesn't have entrypoints.
+  //表示要在Large Object Space分配对象
   kAllocatorTypeLOS,  // Large object space, also doesn't have entrypoints.
   kAllocatorTypeRegion,
   kAllocatorTypeRegionTLAB,
