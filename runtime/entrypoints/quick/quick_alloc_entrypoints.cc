@@ -30,6 +30,8 @@ namespace art {
 
 static constexpr bool kUseTlabFastPath = true;
 
+//分配内存
+//调用来自 OAT 代码
 template <bool kInitialized,
           bool kFinalize,
           bool kInstrumented,
