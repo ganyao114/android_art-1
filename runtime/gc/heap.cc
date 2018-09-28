@@ -180,37 +180,37 @@ FreeListSpace会一次性mmap一块512M内存，用一个相对复杂点的（�
 一般系统默认用FreeListSpace作为large object space。
 **/
 //https://www.jianshu.com/p/1c73eeebafcd
-Heap::Heap(size_t initial_size,
-           size_t growth_limit,
-           size_t min_free,
-           size_t max_free,
-           double target_utilization,
-           double foreground_heap_growth_multiplier,
-           size_t capacity,
-           size_t non_moving_space_capacity,
-           const std::string& image_file_name,
-           const InstructionSet image_instruction_set,
-           CollectorType foreground_collector_type,
-           CollectorType background_collector_type,
-           space::LargeObjectSpaceType large_object_space_type,
-           size_t large_object_threshold,
-           size_t parallel_gc_threads,
-           size_t conc_gc_threads,
-           bool low_memory_mode,
-           size_t long_pause_log_threshold,
-           size_t long_gc_log_threshold,
-           bool ignore_max_footprint,
-           bool use_tlab,
-           bool verify_pre_gc_heap,
-           bool verify_pre_sweeping_heap,
-           bool verify_post_gc_heap,
-           bool verify_pre_gc_rosalloc,
-           bool verify_pre_sweeping_rosalloc,
-           bool verify_post_gc_rosalloc,
-           bool gc_stress_mode,
-           bool measure_gc_performance,
-           bool use_homogeneous_space_compaction_for_oom,
-           uint64_t min_interval_homogeneous_space_compaction_by_oom)
+Heap::Heap(size_t initial_size,//堆的初始大小
+           size_t growth_limit,//堆的增长上限
+           size_t min_free,//堆的最小空闲值
+           size_t max_free,//堆的最大空闲值
+           double target_utilization,//堆的目标利用率
+           double foreground_heap_growth_multiplier,//前台堆增长因子(乘数)
+           size_t capacity,//堆的容量
+           size_t non_moving_space_capacity,//存储不可移动space的容量
+           const std::string& image_file_name,//image文件路径
+           const InstructionSet image_instruction_set,//指令集
+           CollectorType foreground_collector_type,//前台回收器类型
+           CollectorType background_collector_type,//后台回收器类型
+           space::LargeObjectSpaceType large_object_space_type,//存储大对象的space类型
+           size_t large_object_threshold,//大对象数量的阈值
+           size_t parallel_gc_threads,//GC暂停阶段用于同时执行GC任务的线程数
+           size_t conc_gc_threads,//并行GC的线程数
+           bool low_memory_mode,//是否是low memory mode
+           size_t long_pause_log_threshold,//GC造成应用程序暂停的时间阀值,超过则输出log
+           size_t long_gc_log_threshold,//GC时间阀值,超过则输出log
+           bool ignore_max_footprint,//不对堆的增长进行限制,堆可以增长到它的最大容量
+           bool use_tlab,//是否开启TLAB选项
+           bool verify_pre_gc_heap,//是否在开始GC前验证堆
+           bool verify_pre_sweeping_heap,//是否在GC执行清扫前验证堆
+           bool verify_post_gc_heap,//是否在GC完成清扫后验证堆
+           bool verify_pre_gc_rosalloc,//是否在开始GC前验证RosAllocSpace
+           bool verify_pre_sweeping_rosalloc,//是否在GC执行清扫前验证RosAllocSpace
+           bool verify_post_gc_rosalloc,//是否在GC完成清扫后验证RosAllocSpace
+           bool gc_stress_mode,//是否使用 gc 压力模式
+           bool measure_gc_performance,//是否测量 GC 的性能，计算并 log MarkFromReadBarrier 所消耗的时间.
+           bool use_homogeneous_space_compaction_for_oom,//是否使用homogeneous space compaction来避免OOM
+           uint64_t min_interval_homogeneous_space_compaction_by_oom //两次OOM引起homogeneous space compaction时间间隔)
     : non_moving_space_(nullptr),
       rosalloc_space_(nullptr),
       dlmalloc_space_(nullptr),
@@ -325,6 +325,7 @@ Heap::Heap(size_t initial_size,
     }
   }
   ChangeCollector(desired_collector_type_);
+  //创建两个HeapBitmap(live_bitmap_:用来记录上次GC之后还存活的对象;mark_bitmap_:用来记录当前GC中还存活的对象)
   live_bitmap_.reset(new accounting::HeapBitmap(this));
   mark_bitmap_.reset(new accounting::HeapBitmap(this));
   // Requested begin for the alloc space, to follow the mapped image and oat files
@@ -366,6 +367,8 @@ Heap::Heap(size_t initial_size,
       foreground_collector_type_ == kCollectorTypeCC) {
     use_homogeneous_space_compaction_for_oom_ = false;
   }
+
+  //如果后台回收器是homogeneous space compact或者前台回收器不是GSS和CC时，支持homogeneous space compact
   bool support_homogeneous_space_compaction =
       background_collector_type_ == gc::kCollectorTypeHomogeneousSpaceCompact ||
       use_homogeneous_space_compaction_for_oom_;
@@ -373,9 +376,12 @@ Heap::Heap(size_t initial_size,
   // from the main space.
   // This is not the case if we support homogeneous compaction or have a moving background
   // collector type.
+  //如果当前处于Zygote模式或者支持homogeneous space compact或者前台回收器是可以移动对象的或者后台回收器也可以移动对象时，给non_moving_space一个独立的地址
   bool separate_non_moving_space = is_zygote ||
       support_homogeneous_space_compaction || IsMovingGc(foreground_collector_type_) ||
       IsMovingGc(background_collector_type_);
+
+  //再次检查前台进程是否是GSS,如果是，则不给non_moving_space_一个独立的地址
   if (foreground_collector_type_ == kCollectorTypeGSS) {
     separate_non_moving_space = false;
   }

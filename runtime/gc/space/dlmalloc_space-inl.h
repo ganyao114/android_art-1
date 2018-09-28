@@ -32,6 +32,7 @@ inline mirror::Object* DlMallocSpace::AllocNonvirtual(Thread* self, size_t num_b
   mirror::Object* obj;
   {
     MutexLock mu(self, lock_);
+    //使用 libc 分配内存
     obj = AllocWithoutGrowthLocked(self, num_bytes, bytes_allocated, usable_size,
                                    bytes_tl_bulk_allocated);
   }
@@ -56,6 +57,7 @@ inline mirror::Object* DlMallocSpace::AllocWithoutGrowthLocked(
     size_t* bytes_allocated,
     size_t* usable_size,
     size_t* bytes_tl_bulk_allocated) {
+  //使用 libc 中的 mspace_malloc 函数分配内存
   mirror::Object* result = reinterpret_cast<mirror::Object*>(mspace_malloc(mspace_, num_bytes));
   if (LIKELY(result != nullptr)) {
     if (kDebugSpaces) {

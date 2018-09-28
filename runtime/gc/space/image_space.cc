@@ -1784,17 +1784,21 @@ bool ImageSpace::LoadBootImage(const std::string& image_file_name,
       boot_image_spaces->push_back(boot_image_space);
       // Oat files referenced by image files immediately follow them in memory, ensure alloc space
       // isn't going to get in the middle
+      //Oat文件即boot.oat紧跟在boot_image_space末尾
       uint8_t* oat_file_end_addr = boot_image_space->GetImageHeader().GetOatFileEnd();
       CHECK_GT(oat_file_end_addr, boot_image_space->End());
+      //将boot.oat的地址按页大小(pageSize)对齐
       oat_file_end_tmp = AlignUp(oat_file_end_addr, kPageSize);
 
       if (index == 0) {
         // If this was the first space, check whether there are more images to load.
+        //如果是第一块Space,检查是否还有其他的oat文件需要加载
         const OatFile* boot_oat_file = boot_image_space->GetOatFile();
         if (boot_oat_file == nullptr) {
           continue;
         }
 
+        //如果还有其他的 oat 文件，根据 OatHeader 获取 boot_classpath,再根据 boot_classpath 生成 oat 文件完整路径，将完整路径添加进 image 文件列表，从而可以在下次循环中加载
         const OatHeader& boot_oat_header = boot_oat_file->GetOatHeader();
         const char* boot_classpath =
             boot_oat_header.GetStoreValueByKey(OatHeader::kBootClassPathKey);

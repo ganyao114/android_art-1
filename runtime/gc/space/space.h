@@ -194,8 +194,10 @@ std::ostream& operator<<(std::ostream& os, const Space& space);
 class AllocSpace {
  public:
   // Number of bytes currently allocated.
+  //获得当前已经分配的字节数
   virtual uint64_t GetBytesAllocated() = 0;
   // Number of objects currently allocated.
+  //获得当前已经分配的对象数
   virtual uint64_t GetObjectsAllocated() = 0;
 
   // Allocate num_bytes without allowing growth. If the allocation
@@ -211,6 +213,7 @@ class AllocSpace {
   // 3) zero if it's a thread local allocation in an existing
   //    buffer.
   // This is what is to be added to Heap::num_bytes_allocated_.
+  //在Space上分配一个指定大小的对象
   virtual mirror::Object* Alloc(Thread* self, size_t num_bytes, size_t* bytes_allocated,
                                 size_t* usable_size, size_t* bytes_tl_bulk_allocated) = 0;
 
@@ -223,12 +226,15 @@ class AllocSpace {
   }
 
   // Return the storage space required by obj.
+  //获得一个对象占据的内存块大小
   virtual size_t AllocationSize(mirror::Object* obj, size_t* usable_size) = 0;
 
   // Returns how many bytes were freed.
+  //释放一个对象占据的内存块
   virtual size_t Free(Thread* self, mirror::Object* ptr) = 0;
 
   // Returns how many bytes were freed.
+  //批量释放一系列对象占据的内存块
   virtual size_t FreeList(Thread* self, size_t num_ptrs, mirror::Object** ptrs) = 0;
 
   // Revoke any sort of thread-local buffers that are used to speed up allocations for the given
@@ -266,16 +272,19 @@ class AllocSpace {
 class ContinuousSpace : public Space {
  public:
   // Address at which the space begins.
+  //获得Space的起始地址
   uint8_t* Begin() const {
     return begin_;
   }
 
   // Current address at which the space ends, which may vary as the space is filled.
+  //获得Space的结束地址
   uint8_t* End() const {
     return end_.LoadRelaxed();
   }
 
   // The end of the address range covered by the space.
+  //获得Space的大小
   uint8_t* Limit() const {
     return limit_;
   }
@@ -344,10 +353,13 @@ class ContinuousSpace : public Space {
 // is suitable for use for large primitive arrays.
 class DiscontinuousSpace : public Space {
  public:
+
+  //获得Space的Live Bitmap
   accounting::LargeObjectBitmap* GetLiveBitmap() const {
     return live_bitmap_.get();
   }
 
+  //获得Space的Mark Bitmap
   accounting::LargeObjectBitmap* GetMarkBitmap() const {
     return mark_bitmap_.get();
   }
@@ -361,6 +373,7 @@ class DiscontinuousSpace : public Space {
  protected:
   DiscontinuousSpace(const std::string& name, GcRetentionPolicy gc_retention_policy);
 
+  //内存 Bitmap，也是分为 live 和 mark
   std::unique_ptr<accounting::LargeObjectBitmap> live_bitmap_;
   std::unique_ptr<accounting::LargeObjectBitmap> mark_bitmap_;
 

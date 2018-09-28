@@ -189,6 +189,7 @@ class ImageSpace : public MemMapSpace {
   // The OatFile associated with the image during early startup to
   // reserve space contiguous to the image. It is later released to
   // the ClassLinker during it's initialization.
+  //ImageSpace 所加载的 oat 文件
   std::unique_ptr<OatFile> oat_file_;
 
   // There are times when we need to find the boot image oat file. As

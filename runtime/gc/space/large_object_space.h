@@ -38,6 +38,12 @@ enum class LargeObjectSpaceType {
   kFreeList,
 };
 
+/**
+  ART运行时提供了两种Large Object Space实现。其中一种实现和Continuous Space的实现类似，预先分配好一块大的内存空间，然后再在上面为对象分配内存块。
+不过这种方式实现的Large Object Space不像Continuous Space通过C库的内块管理接口来分配和释放内存，而是自己维护一个Free List。每次为对象分配内存时，都是从这个Free List找到合适的空闲的内存块来分配。
+释放内存的时候，也是将要释放的内存添加到该Free List去。
+  另外一种Large Object Space实现是每次为对象分配内存时，都单独为其映射一新的内存。也就是说，为每一个对象分配的内存块都是相互独立的。这种实现方式相比上面介绍的Free List实现方式，也更简单一些。
+ **/
 // Abstraction implemented by all large object spaces.
 class LargeObjectSpace : public DiscontinuousSpace, public AllocSpace {
  public:
@@ -114,9 +120,13 @@ class LargeObjectSpace : public DiscontinuousSpace, public AllocSpace {
   static void SweepCallback(size_t num_ptrs, mirror::Object** ptrs, void* arg);
 
   // Approximate number of bytes which have been allocated into the space.
+  //记录当前已经分配的内存字节数
   uint64_t num_bytes_allocated_;
+  //记录当前已经分配的对象数
   uint64_t num_objects_allocated_;
+  //记录从Space创建以来所分配的内存字节数
   uint64_t total_bytes_allocated_;
+  //记录从Space创建以来所分配的对象数
   uint64_t total_objects_allocated_;
   // Begin and end, may change as more large objects are allocated.
   uint8_t* begin_;
@@ -129,6 +139,8 @@ class LargeObjectSpace : public DiscontinuousSpace, public AllocSpace {
 };
 
 // A discontinuous large object space implemented by individual mmap/munmap calls.
+//为每一对象映射一块独立的内存块的Large Object Space实现
+//LargeObjectMapSpace描述的是一个在地址空间上不连续的Large Object Space
 class LargeObjectMapSpace : public LargeObjectSpace {
  public:
   // Creates a large object space. Allocations into the large object space use memory maps instead
@@ -158,11 +170,15 @@ class LargeObjectMapSpace : public LargeObjectSpace {
   void SetAllLargeObjectsAsZygoteObjects(Thread* self) OVERRIDE REQUIRES(!lock_);
 
   // Used to ensure mutual exclusion when the allocation spaces data structures are being modified.
+  //保存为每一个对象独立映射的内存块
   mutable Mutex lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
   AllocationTrackingSafeMap<mirror::Object*, LargeObject, kAllocatorTagLOSMaps> large_objects_
       GUARDED_BY(lock_);
 };
 
+//预先分配好一块大的内存空间，然后再在上面为对象分配内存块。
+//不过这种方式实现的Large Object Space不像Continuous Space通过C库的内块管理接口来分配和释放内存
+//，而是自己维护一个Free List。每次为对象分配内存时，都是从这个Free List找到合适的空闲的内存块来分配。释放内存的时候，也是将要释放的内存添加到该Free List去
 // A continuous large object space with a free-list to handle holes.
 class FreeListSpace FINAL : public LargeObjectSpace {
  public:

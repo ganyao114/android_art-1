@@ -31,6 +31,19 @@ namespace space {
 
 // An alloc space is a space where objects may be allocated and garbage collected. Not final as may
 // be overridden by a MemoryToolMallocSpace.
+/**
+    Zygote Space和Allocation Space都是通过类DlMallocSpace来描述。虽然Zygote Space和Allocation Space内部使用的内存块都是通过内存映射得到的
+ ，不过在使用它们的时候，是通过C库提供的内存管理接口来使用的，因此这里就将它们的名字命名为DlMalloc，这也是DlMallocSpace的由来。由于DlMallocSpace还是可以分配新对象的
+ ，因此在图5中，我们看到它除了继承于MemMapSpace类之外，还继承于AllocSpace。
+
+mspace_: 和Dalvik虚拟机一样，ART运行时也是将Zygote Space和Allocation Space使用的匿名共享内存块封装成一个mspace对象，以便可以使用C库提供的内存管理接口来在上面分配和释放内存。
+
+以下在父类中定义
+live_bitmap_: 指向一个SpaceBitmap，用来记录上次GC后存活对象。
+mark_bitmap_: 指向一个SpaceBitmap，用来记录当前GC被标记的对象。
+num_bytes_allocated_: 记录当前已经分配的内存字节数。
+num_objects_allocated_: 记录当前已经分配的对象数。
+**/
 class DlMallocSpace : public MallocSpace {
  public:
   // Create a DlMallocSpace from an existing mem_map.
@@ -52,9 +65,11 @@ class DlMallocSpace : public MallocSpace {
                                           size_t* bytes_tl_bulk_allocated)
       OVERRIDE REQUIRES(!lock_);
   // Virtual to allow MemoryToolMallocSpace to intercept.
+  //分配内存，最终实现是 libc 中的函数 *
   virtual mirror::Object* Alloc(Thread* self, size_t num_bytes, size_t* bytes_allocated,
                                 size_t* usable_size, size_t* bytes_tl_bulk_allocated)
       OVERRIDE REQUIRES(!lock_) {
+    //继续 *    
     return AllocNonvirtual(self, num_bytes, bytes_allocated, usable_size,
                            bytes_tl_bulk_allocated);
   }
@@ -159,6 +174,7 @@ class DlMallocSpace : public MallocSpace {
   static const size_t kChunkOverhead = sizeof(intptr_t);
 
   // Underlying malloc space.
+  //ART运行时将Zygote Space和Allocation Space使用的匿名共享内存块封装成一个mspace对象，以便可以使用C库提供的内存管理接口来在上面分配和释放内存
   void* mspace_;
 
   friend class collector::MarkSweep;
