@@ -381,7 +381,7 @@ Heap::Heap(size_t initial_size,//堆的初始大小
       support_homogeneous_space_compaction || IsMovingGc(foreground_collector_type_) ||
       IsMovingGc(background_collector_type_);
 
-  //再次检查前台进程是否是GSS,如果是，则不给non_moving_space_一个独立的地址
+  //再次检查前台GC是否是GSS,如果是，则不给non_moving_space_一个独立的地址
   if (foreground_collector_type_ == kCollectorTypeGSS) {
     separate_non_moving_space = false;
   }

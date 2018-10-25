@@ -741,6 +741,7 @@ std::string Runtime::GetCompilerExecutable() const {
   return compiler_executable;
 }
 
+//虚拟机启动
 bool Runtime::Start() {
   VLOG(startup) << "Runtime::Start entering";
 
@@ -757,6 +758,7 @@ bool Runtime::Start() {
   // Restore main thread state to kNative as expected by native code.
   Thread* self = Thread::Current();
 
+  //主线程即将进入 Java 世界，将主线程状态设置为暂停
   self->TransitionFromRunnableToSuspended(kNative);
 
   started_ = true;
@@ -765,6 +767,7 @@ bool Runtime::Start() {
     ScopedObjectAccess soa(self);
     StackHandleScope<2> hs(soa.Self());
 
+    //预先加载一些基础类
     auto class_class(hs.NewHandle<mirror::Class>(mirror::Class::GetJavaLangClass()));
     auto field_class(hs.NewHandle<mirror::Class>(mirror::Field::StaticClass()));
 
@@ -777,6 +780,8 @@ bool Runtime::Start() {
   // it touches will have methods linked to the oat file if necessary.
   {
     ScopedTrace trace2("InitNativeMethods");
+
+    //初始化 native 方法 *
     InitNativeMethods();
   }
 
@@ -1423,6 +1428,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
       break;
   }
 
+  //当用作 dex2oat 的时候不需要进行异常处理
   if (!no_sig_chain_) {
     // Dex2Oat's Runtime does not need the signal chain or the fault handler.
     if (implicit_null_checks_ || implicit_so_checks_ || implicit_suspend_checks_) {
@@ -1496,6 +1502,9 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   //ART虚拟机的堆包含有三个连续空间和一个不连续空间。三个连续空间分别用来分配不同的对象。当第一个连续空间不是Image空间时，就表明当前进程不是Zygote进程，而是安装应用程序时启动的一个dex2oat进程。
   //安装应用程序时启动的dex2oat进程也会在内部创建一个ART虚拟机，不过这个ART虚拟机是用来将DEX字节码编译成本地机器指令的，而Zygote进程创建的ART虚拟机是用来运行应用程序的。
+
+
+  //如果有 BootImage，一般启动 apk 就走这个
   if (GetHeap()->HasBootImageSpace()) {
     //初始化 Class Linker *
     bool result = class_linker_->InitFromBootImage(&error_msg);
@@ -1528,6 +1537,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
       DeoptimizeBootImage();
     }
   } else {
+    //自定义加载的启动库，从启动配置里面读取加载
     std::vector<std::string> dex_filenames;
     Split(boot_class_path_string_, ':', &dex_filenames);
 
@@ -1543,6 +1553,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     if (runtime_options.Exists(Opt::BootClassPathDexList)) {
       boot_class_path.swap(*runtime_options.GetOrDefault(Opt::BootClassPathDexList));
     } else {
+      //打开 Dex 文件 *
       OpenDexFiles(dex_filenames,
                    dex_locations,
                    runtime_options.GetOrDefault(Opt::Image),
@@ -1555,6 +1566,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     }
 
     // TODO: Should we move the following to InitWithoutImage?
+    //设置指令集相关，方法跳转时保存现场环境的实现
     SetInstructionSet(instruction_set_);
     for (uint32_t i = 0; i < kCalleeSaveSize; i++) {
       CalleeSaveType type = CalleeSaveType(i);
@@ -1580,6 +1592,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
 
   // TODO: move this to just be an Trace::Start argument
   Trace::SetDefaultClockSource(runtime_options.GetOrDefault(Opt::ProfileClock));
+
+  //预先 new 几个 Exception 对象
 
   // Pre-allocate an OutOfMemoryError for the double-OOME case.
   self->ThrowNewException("Ljava/lang/OutOfMemoryError;",
@@ -1752,6 +1766,8 @@ void Runtime::InitNativeMethods() {
   CHECK_EQ(self->GetState(), kNative);
 
   // Set up the native methods provided by the runtime itself.
+
+  //将 ART Runtime 的一些内部方法注册到 JNI 中 *
   RegisterRuntimeNativeMethods(env);
 
   // Initialize classes used in JNI. The initialization requires runtime native
@@ -1817,6 +1833,7 @@ jobject Runtime::GetSystemClassLoader() const {
   return system_class_loader_;
 }
 
+//注册 Runtime 的一些内部方法
 void Runtime::RegisterRuntimeNativeMethods(JNIEnv* env) {
   register_dalvik_system_DexFile(env);
   register_dalvik_system_VMDebug(env);

@@ -25,6 +25,7 @@
 
 namespace art {
 
+//注册 JNI 方法，inline 去防止 hook
 ALWAYS_INLINE inline void RegisterNativeMethodsInternal(JNIEnv* env,
                                                         const char* jni_class_name,
                                                         const JNINativeMethod* methods,

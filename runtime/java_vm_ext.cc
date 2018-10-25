@@ -1163,6 +1163,8 @@ extern "C" jint JNI_CreateJavaVM(JavaVM** p_vm, JNIEnv** p_env, void* vm_args) {
   android::InitializeNativeLoader();
 
   Runtime* runtime = Runtime::Current();
+
+  //虚拟机启动 *
   bool started = runtime->Start();
   if (!started) {
     delete Thread::Current()->GetJniEnv();

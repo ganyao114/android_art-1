@@ -22,7 +22,7 @@
 
 #include "base/macros.h"
 #include "base/mutex.h"
-
+//和 CPU 架构相关的函数
 namespace art {
 
 class QuickMethodFrameInfo;
