@@ -23,6 +23,7 @@
 
 #include "android-base/macros.h"
 
+//临时局部对象，用于实现对象方法结束自动释放
 namespace art {
 
 template<typename T>

@@ -781,7 +781,7 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
       return false;
     }
   }
-  //把线程注册到列表中
+  //把线程注册到列表中 *
   thread_list->Register(this);
   return true;
 }
@@ -966,13 +966,14 @@ void Thread::CreatePeer(const char* name, bool as_daemon, jobject thread_group) 
   ScopedObjectAccess soa(self);
   StackHandleScope<1> hs(self);
   MutableHandle<mirror::String> peer_thread_name(hs.NewHandle(GetThreadName()));
+  //如果线程名为空，则说明此线程 Java 世界对应的 Thread 对象尚未初始化
   if (peer_thread_name == nullptr) {
     // The Thread constructor should have set the Thread.name to a
     // non-null value. However, because we can run without code
     // available (in the compiler, in tests), we manually assign the
     // fields the constructor should have set.
     if (runtime->IsActiveTransaction()) {
-      //初始化 Java Thread *
+      //初始化 Java Thread 对象 *
       InitPeer<true>(soa,
                      tlsPtr_.opeer,
                      thread_is_daemon,

@@ -164,10 +164,12 @@ jfieldID WellKnownClasses::org_apache_harmony_dalvik_ddmc_Chunk_offset;
 jfieldID WellKnownClasses::org_apache_harmony_dalvik_ddmc_Chunk_type;
 
 static jclass CacheClass(JNIEnv* env, const char* jni_class_name) {
+  //首先去加载类
   ScopedLocalRef<jclass> c(env, env->FindClass(jni_class_name));
   if (c.get() == nullptr) {
     LOG(FATAL) << "Couldn't find class: " << jni_class_name;
   }
+  //加入 JNI 全局引用表当中
   return reinterpret_cast<jclass>(env->NewGlobalRef(c.get()));
 }
 
@@ -291,6 +293,7 @@ void WellKnownClasses::Init(JNIEnv* env) {
   hiddenapi::ScopedHiddenApiEnforcementPolicySetting hiddenapi_exemption(
       hiddenapi::EnforcementPolicy::kNoChecks);
 
+  //缓存虚拟机内部类 *
   dalvik_annotation_optimization_CriticalNative =
       CacheClass(env, "dalvik/annotation/optimization/CriticalNative");
   dalvik_annotation_optimization_FastNative = CacheClass(env, "dalvik/annotation/optimization/FastNative");

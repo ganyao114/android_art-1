@@ -852,6 +852,7 @@ void JavaVMExt::UnloadNativeLibraries() {
   libraries_.get()->UnloadNativeLibraries();
 }
 
+//加载 Native 库 
 bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
                                   const std::string& path,
                                   jobject class_loader,
@@ -867,8 +868,11 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
   {
     // TODO: move the locking (and more of this logic) into Libraries.
     MutexLock mu(self, *Locks::jni_libraries_lock_);
+    //先查找是不是已加载
     library = libraries_->Get(path);
   }
+
+  //准备 ClassLoader 相关，后面细看
   void* class_loader_allocator = nullptr;
   {
     ScopedObjectAccess soa(env);
@@ -885,6 +889,8 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
     class_loader_allocator = class_linker->GetAllocatorForClassLoader(loader.Ptr());
     CHECK(class_loader_allocator != nullptr);
   }
+
+  //如果库没有加载过
   if (library != nullptr) {
     // Use the allocator pointers for class loader equality to avoid unnecessary weak root decode.
     if (library->GetClassLoaderAllocator() != class_loader_allocator) {
@@ -893,6 +899,10 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
       // class loader.
       //
       // This isn't very common. So spend some time to get a readable message.
+      //Native 库需要和 ClassLoader 绑定
+      //对同一个classloader 对象可以重复加载相同的库，对不同的classloader只可以加载一次相同的库
+      //进到这里说明有其他 ClassLoader 加载过了该库，这下面都是打印错误
+      //局部方法，调用 ClassLoader.toString()
       auto call_to_string = [&](jobject obj) -> std::string {
         if (obj == nullptr) {
           return "null";
@@ -952,21 +962,27 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
   // dlopen) becomes zero from dlclose.
 
   // Retrieve the library path from the classloader, if necessary.
+  //从 ClassLoader 中获取 so 搜索路径
   ScopedLocalRef<jstring> library_path(env, GetLibrarySearchPath(env, class_loader));
 
   Locks::mutator_lock_->AssertNotHeld(self);
   const char* path_str = path.empty() ? nullptr : path.c_str();
   bool needs_native_bridge = false;
+
+  //开始打开 so，这个方法实现在 Android System Lib 中
+  //system/core/libnativeloader/native_loader.cpp
   void* handle = android::OpenNativeLibrary(env,
                                             runtime_->GetTargetSdkVersion(),
                                             path_str,
                                             class_loader,
                                             library_path.get(),
+                                            //这个参数就是用来解决不同平台的指令翻译的，例如 Android X86 一般都会带这个去兼容 ARM so
                                             &needs_native_bridge,
                                             error_msg);
 
   VLOG(jni) << "[Call to dlopen(\"" << path << "\", RTLD_NOW) returned " << handle << "]";
 
+  //加载失败
   if (handle == nullptr) {
     VLOG(jni) << "dlopen(\"" << path << "\", RTLD_NOW) failed: " << *error_msg;
     return false;
@@ -982,6 +998,7 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
   bool created_library = false;
   {
     // Create SharedLibrary ahead of taking the libraries lock to maintain lock ordering.
+    //创建 Native Lib 结构体并保存
     std::unique_ptr<SharedLibrary> new_library(
         new SharedLibrary(env,
                           self,
@@ -993,6 +1010,7 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
 
     MutexLock mu(self, *Locks::jni_libraries_lock_);
     library = libraries_->Get(path);
+    //存在旧的同 path lib，先把老的释放，再把新的加入
     if (library == nullptr) {  // We won race to get libraries_lock.
       library = new_library.release();
       libraries_->Put(path, library);
@@ -1007,6 +1025,7 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
   VLOG(jni) << "[Added shared library \"" << path << "\" for ClassLoader " << class_loader << "]";
 
   bool was_successful = false;
+  //准备调用 JNI_OnLoad
   void* sym = library->FindSymbol("JNI_OnLoad", nullptr);
   if (sym == nullptr) {
     VLOG(jni) << "[No JNI_OnLoad found in \"" << path << "\"]";
@@ -1016,6 +1035,8 @@ bool JavaVMExt::LoadNativeLibrary(JNIEnv* env,
     // loader, which will always be "null" since the stuff at the
     // top of the stack is around Runtime.loadLibrary().  (See
     // the comments in the JNI FindClass function.)
+
+    //替换 ClassLoader 后执行 JNI_OnLoad
     ScopedLocalRef<jobject> old_class_loader(env, env->NewLocalRef(self->GetClassLoaderOverride()));
     self->SetClassLoaderOverride(class_loader);
 

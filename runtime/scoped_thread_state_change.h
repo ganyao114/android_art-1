@@ -93,8 +93,8 @@ class ScopedObjectAccessAlreadyRunnable : public ValueObject {
    */
   
   //将对象的引用添加到这个表里，和现在的栈帧建立关系
-  //这样当在 Native 使用 Java 对象的时候，这个对象不会被 GC
-  //并且在 native 方法返回的时候，该栈帧被销毁，这个引用也会被移除
+  //作用域销毁的时候引用将自动移除
+  //这样以实现 Java 中类似 Sync 同步块的东西
   template<typename T>
   T AddLocalReference(ObjPtr<mirror::Object> obj) const
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -166,6 +166,8 @@ class ScopedObjectAccessUnchecked : public ScopedObjectAccessAlreadyRunnable {
  private:
   // The scoped thread state change makes sure that we are runnable and restores the thread state
   // in the destructor.
+  //作用域线程状态更改，确保我们可以运行并在析构函数中恢复线程状态。
+  //类似 Java 同步块
   const ScopedThreadStateChange tsc_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedObjectAccessUnchecked);

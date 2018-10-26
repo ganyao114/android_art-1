@@ -1394,6 +1394,7 @@ void ThreadList::SuspendAllDaemonThreadsForShutdown() {
   LOG(WARNING) << "timed out suspending all daemon threads";
 }
 
+//注册线程
 void ThreadList::Register(Thread* self) {
   DCHECK_EQ(self, Thread::Current());
   CHECK(!shut_down_);
@@ -1403,7 +1404,7 @@ void ThreadList::Register(Thread* self) {
     self->ShortDump(oss);  // We don't hold the mutator_lock_ yet and so cannot call Dump.
     LOG(INFO) << "ThreadList::Register() " << *self  << "\n" << oss.str();
   }
-
+  //加入 Thread List 之前先给 List 加锁
   // Atomically add self to the thread list and make its thread_suspend_count_ reflect ongoing
   // SuspendAll requests.
   MutexLock mu(self, *Locks::thread_list_lock_);
@@ -1420,7 +1421,10 @@ void ThreadList::Register(Thread* self) {
     DCHECK(updated);
   }
   CHECK(!Contains(self));
+  //加入 List
   list_.push_back(self);
+
+  //GC 相关
   if (kUseReadBarrier) {
     gc::collector::ConcurrentCopying* const cc =
         Runtime::Current()->GetHeap()->ConcurrentCopyingCollector();

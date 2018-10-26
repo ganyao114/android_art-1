@@ -758,7 +758,7 @@ bool Runtime::Start() {
   // Restore main thread state to kNative as expected by native code.
   Thread* self = Thread::Current();
 
-  //主线程即将进入 Java 世界，将主线程状态设置为暂停
+  //将主线程状态设置为暂停
   self->TransitionFromRunnableToSuspended(kNative);
 
   started_ = true;
@@ -1757,6 +1757,7 @@ void Runtime::AttachAgent(JNIEnv* env, const std::string& agent_arg, jobject cla
   }
 }
 
+//初始化 Native 方法
 void Runtime::InitNativeMethods() {
   VLOG(startup) << "Runtime::InitNativeMethods entering";
   Thread* self = Thread::Current();
@@ -1772,13 +1773,16 @@ void Runtime::InitNativeMethods() {
 
   // Initialize classes used in JNI. The initialization requires runtime native
   // methods to be loaded first.
+  //初始化 ART Runtime 的一些内部类，在此之前需要预先注册加载其中用到的内部方法(就是上一步) *
   WellKnownClasses::Init(env);
 
   // Then set up libjavacore / libopenjdk, which are just a regular JNI libraries with
   // a regular JNI_OnLoad. Most JNI libraries can just use System.loadLibrary, but
   // libcore can't because it's the library that implements System.loadLibrary!
+  //加载 Java Core 和 OpenJdk 库
   {
     std::string error_msg;
+    //加载 Native 库 *
     if (!java_vm_->LoadNativeLibrary(env, "libjavacore.so", nullptr, &error_msg)) {
       LOG(FATAL) << "LoadNativeLibrary failed for \"libjavacore.so\": " << error_msg;
     }
@@ -1793,7 +1797,7 @@ void Runtime::InitNativeMethods() {
     }
   }
 
-  // Initialize well known classes that may invoke runtime native methods.
+  // 初始化一些核心类 
   WellKnownClasses::LateInit(env);
 
   VLOG(startup) << "Runtime::InitNativeMethods exiting";
