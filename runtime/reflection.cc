@@ -458,18 +458,23 @@ void InvokeWithArgArray(const ScopedObjectAccessAlreadyRunnable& soa,
 
 }  // anonymous namespace
 
+//调用方法
 JValue InvokeWithVarArgs(const ScopedObjectAccessAlreadyRunnable& soa, jobject obj, jmethodID mid,
                          va_list args)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // We want to make sure that the stack is not within a small distance from the
   // protected region in case we are calling into a leaf function whose stack
   // check has been elided.
+  //栈溢出检查
   if (UNLIKELY(__builtin_frame_address(0) < soa.Self()->GetStackEnd())) {
     ThrowStackOverflowError(soa.Self());
     return JValue();
   }
 
+  //找到 AetMethod
   ArtMethod* method = jni::DecodeArtMethod(mid);
+
+  //如果是String对象的初始化方法，则套上代理
   bool is_string_init = method->GetDeclaringClass()->IsStringClass() && method->IsConstructor();
   if (is_string_init) {
     // Replace calls to String.<init> with equivalent StringFactory call.

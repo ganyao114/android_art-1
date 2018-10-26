@@ -1756,12 +1756,14 @@ class JNI {
     return InvokeWithJValues(soa, nullptr, mid, args).GetD();
   }
 
+  //执行静态函数，call main 方法入口
   static void CallStaticVoidMethod(JNIEnv* env, jclass, jmethodID mid, ...) {
     va_list ap;
     va_start(ap, mid);
     ScopedVAArgs free_args_later(&ap);
     CHECK_NON_NULL_ARGUMENT_RETURN_VOID(mid);
     ScopedObjectAccess soa(env);
+    //调用 *
     InvokeWithVarArgs(soa, nullptr, mid, ap);
   }
 
